@@ -210,6 +210,17 @@ class MetricsTests(AuthenticatedAPITestCase):
         res = self.client.get(LIST_CREATE_URL)
         self.assertEqual(len(res.data['requests']), 2)
 
+    def test_stat_strip_metrics_are_null_not_fake_zero_when_nothing_exists_yet(self):
+        res = self.client.get(LIST_CREATE_URL)
+        self.assertEqual(res.data['metrics']['twinsCreatedThisMonth'], 0)  # real count, legitimately 0
+        self.assertIsNone(res.data['metrics']['pctValuesAutoVerified'])  # no values extracted anywhere yet
+        self.assertIsNone(res.data['metrics']['avgRequestToExtractionDays'])  # nothing has reached extraction yet
+
+    def test_loans_by_stage_counts_only_the_two_real_stages(self):
+        _make_sent_request(self.client, self.user)  # sent, not yet queued -> "documents"
+        res = self.client.get(LIST_CREATE_URL)
+        self.assertEqual(res.data['metrics']['loansByStage'], {'documents': 1, 'extraction': 0})
+
 
 class ResendTests(AuthenticatedAPITestCase):
     def setUp(self):
@@ -1363,3 +1374,188 @@ class LenderLoanAdminSplitTests(AuthenticatedAPITestCase):
         email = RequestEmail.objects.get(document_request=self.doc_request, kind='request')
         self.assertIn('Corporate Resolution', email.body_text)
         self.assertNotIn('Certificate of Good Standing', email.body_text)
+
+
+class CustomerActivityTests(AuthenticatedAPITestCase):
+    """v5's 'Customer activity' tab -- a real, chronological event trail per
+    request, built entirely from data already logged elsewhere (no search,
+    no portfolio analytics, no tickler/covenant widgets -- those need
+    infrastructure this project doesn't have)."""
+
+    def setUp(self):
+        super().setUp()
+        self.doc_request = _make_sent_request(self.client, self.user)
+        self.items = list(self.doc_request.checklist_items.order_by('order').all())
+
+    def _get_activity(self):
+        res = self.client.get('/api/requests/activity')
+        return next(r for r in res.data['requests'] if r['id'] == self.doc_request.id)
+
+    def test_activity_requires_auth(self):
+        self.client.force_authenticate(user=None)
+        res = self.client.get('/api/requests/activity')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_activity_excludes_drafts(self):
+        draft = DocumentRequest.objects.create(borrower_name='Nobody Yet', status='draft', created_by=self.user)
+        res = self.client.get('/api/requests/activity')
+        ids = [r['id'] for r in res.data['requests']]
+        self.assertNotIn(draft.id, ids)
+        self.assertIn(self.doc_request.id, ids)
+
+    def test_activity_includes_the_sent_email_event(self):
+        row = self._get_activity()
+        titles = [e['title'] for e in row['events']]
+        self.assertIn('Secure request sent', titles)
+
+    def test_activity_includes_upload_and_review_events_in_chronological_order(self):
+        item = self.items[0]
+        self.client.force_authenticate(user=None)
+        self.client.post(f'/api/upload/{self.doc_request.link_token}/documents', {
+            'checklistItemId': item.id, 'file': SimpleUploadedFile('statement.pdf', b'content'),
+        }, format='multipart')
+        self.client.force_authenticate(user=self.user)
+        self.client.post(f'/api/requests/{self.doc_request.id}/parking-bay/{item.id}/review', {
+            'decision': 'flag', 'comment': 'needs redo',
+        }, format='json')
+
+        row = self._get_activity()
+        titles = [e['title'] for e in row['events']]
+        self.assertIn('statement.pdf uploaded', titles)
+        self.assertIn('statement.pdf flagged for re-upload', titles)
+
+        timestamps = [e['at'] for e in row['events']]
+        self.assertEqual(timestamps, sorted(timestamps))  # chronological, oldest first
+
+        flag_event = next(e for e in row['events'] if e['title'] == 'statement.pdf flagged for re-upload')
+        self.assertEqual(flag_event['type'], 'bank')
+        self.assertEqual(flag_event['detail'], 'needs redo')
+
+    def test_activity_twin_events_included_but_audit_write_excluded(self):
+        for item in self.items:
+            self.client.force_authenticate(user=None)
+            self.client.post(f'/api/upload/{self.doc_request.link_token}/documents', {
+                'checklistItemId': item.id, 'file': SimpleUploadedFile(f'{item.id}.pdf', b'content'),
+            }, format='multipart')
+            self.client.force_authenticate(user=self.user)
+            self.client.post(f'/api/requests/{self.doc_request.id}/parking-bay/{item.id}/review', {
+                'decision': 'approve',
+            }, format='json')
+        self.client.post(f'/api/requests/{self.doc_request.id}/parking-bay/kick-start-extraction')
+
+        row = self._get_activity()
+        types = {e['title'] for e in row['events']}
+        self.assertIn('document_twin.received', types)
+        self.assertIn('business_twin.relationship', types)
+        self.assertNotIn('audit.write', types)
+
+
+class NeedsAttentionTests(AuthenticatedAPITestCase):
+    """v5's 'Needs attention' rail -- every item is real: fraud-stopped
+    sessions, flagged documents, and low-confidence extracted values. No
+    tickler-escalation item is included since no reminder system exists."""
+
+    def test_requires_auth(self):
+        self.client.force_authenticate(user=None)
+        res = self.client.get('/api/requests/needs-attention')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_empty_when_nothing_needs_attention(self):
+        _make_sent_request(self.client, self.user)
+        res = self.client.get('/api/requests/needs-attention')
+        self.assertEqual(res.data['items'], [])
+
+    def test_fraud_stopped_request_surfaces(self):
+        doc_request = _make_sent_request(self.client, self.user)
+        self.client.force_authenticate(user=None)
+        for _ in range(5):
+            self.client.post(f'/api/upload/{doc_request.link_token}/documents', {}, format='multipart')
+        self.client.force_authenticate(user=self.user)
+
+        res = self.client.get('/api/requests/needs-attention')
+        fraud_items = [i for i in res.data['items'] if i['type'] == 'fraud']
+        self.assertEqual(len(fraud_items), 1)
+        self.assertEqual(fraud_items[0]['requestId'], doc_request.id)
+        self.assertIn('Repeated failed upload attempts', fraud_items[0]['detail'])
+
+    def test_flagged_document_surfaces(self):
+        doc_request = _make_sent_request(self.client, self.user)
+        item = doc_request.checklist_items.first()
+        self.client.force_authenticate(user=None)
+        self.client.post(f'/api/upload/{doc_request.link_token}/documents', {
+            'checklistItemId': item.id, 'file': SimpleUploadedFile('x.pdf', b'x'),
+        }, format='multipart')
+        self.client.force_authenticate(user=self.user)
+        self.client.post(f'/api/requests/{doc_request.id}/parking-bay/{item.id}/review', {
+            'decision': 'flag', 'comment': 'needs redo',
+        }, format='json')
+
+        res = self.client.get('/api/requests/needs-attention')
+        flagged_items = [i for i in res.data['items'] if i['type'] == 'flagged']
+        self.assertEqual(len(flagged_items), 1)
+        self.assertEqual(flagged_items[0]['requestId'], doc_request.id)
+        self.assertEqual(flagged_items[0]['detail'], 'needs redo')
+
+    def test_low_confidence_values_surface_as_a_single_hitl_count(self):
+        doc_request = _make_sent_request(self.client, self.user)
+        item = doc_request.checklist_items.first()
+        upload = UploadedFile.objects.create(
+            document_request=doc_request, checklist_item=item,
+            file_name='a.pdf', file_type='text/plain', file_path='a',
+        )
+        twin = DocumentTwin.objects.create(document_request=doc_request, uploaded_file=upload)
+        ExtractedValue.objects.create(document_twin=twin, field_name='x', value='y', confidence=0.5)
+        ExtractedValue.objects.create(document_twin=twin, field_name='x', value='y', confidence=0.95)
+
+        res = self.client.get('/api/requests/needs-attention')
+        hitl_items = [i for i in res.data['items'] if i['type'] == 'hitl']
+        self.assertEqual(len(hitl_items), 1)
+        self.assertIn('1 value(s)', hitl_items[0]['title'])
+
+
+class SearchTests(AuthenticatedAPITestCase):
+    """v5's document-estate search -- real substring matching, no
+    semantic/AI search infrastructure exists."""
+
+    def test_requires_auth(self):
+        self.client.force_authenticate(user=None)
+        res = self.client.get('/api/requests/search?q=Meridian')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_empty_query_returns_no_results(self):
+        res = self.client.get('/api/requests/search?q=')
+        self.assertEqual(res.data['results'], [])
+
+    def test_matches_request_by_company_name(self):
+        _make_sent_request(self.client, self.user, companyName='Meridian Logistics LLC')
+        res = self.client.get('/api/requests/search?q=meridian')
+        matches = [r for r in res.data['results'] if r['kind'] == 'request']
+        self.assertEqual(len(matches), 1)
+        self.assertIn('Meridian', matches[0]['title'])
+
+    def test_matches_checklist_item_name(self):
+        doc_request = _make_sent_request(self.client, self.user)
+        res = self.client.get('/api/requests/search?q=Corporate Resolution')
+        matches = [r for r in res.data['results'] if r['kind'] == 'checklistItem']
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]['requestId'], doc_request.id)
+
+    def test_matches_extracted_value(self):
+        doc_request = _make_sent_request(self.client, self.user)
+        item = doc_request.checklist_items.first()
+        upload = UploadedFile.objects.create(
+            document_request=doc_request, checklist_item=item,
+            file_name='a.pdf', file_type='text/plain', file_path='a',
+        )
+        twin = DocumentTwin.objects.create(document_request=doc_request, uploaded_file=upload)
+        ExtractedValue.objects.create(document_twin=twin, field_name='Dollar amount', value='$4,218,400', confidence=0.95)
+
+        res = self.client.get('/api/requests/search?q=4,218,400')
+        matches = [r for r in res.data['results'] if r['kind'] == 'extractedValue']
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]['requestId'], doc_request.id)
+
+    def test_no_match_returns_empty(self):
+        _make_sent_request(self.client, self.user)
+        res = self.client.get('/api/requests/search?q=nonexistentxyz')
+        self.assertEqual(res.data['results'], [])

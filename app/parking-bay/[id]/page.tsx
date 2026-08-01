@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import WorkspaceNav from "../../components/WorkspaceNav";
 
 interface Me { id: number; email: string; fullName: string; isStaff: boolean; }
 
@@ -166,6 +167,8 @@ export default function ParkingBayPage() {
                 {bay.referenceNumber && <span>Reference {bay.referenceNumber}</span>}
               </div>
             </div>
+
+            <WorkspaceNav />
 
             <LoanStatusStepper extractionQueued={!!bay.extractionQueuedAt} />
 

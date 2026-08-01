@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import WorkspaceNav from "../components/WorkspaceNav";
 
 interface Me { id: number; email: string; fullName: string; isStaff: boolean; }
 interface FieldResult { ok: boolean; message: string; }
@@ -17,7 +18,11 @@ interface RequestRow {
 interface Metrics {
   activeRequests: number; docsInParkingBay: number | null;
   awaitingCustomer: number; sessionsEndedFraud: number | null;
+  loansByStage: { documents: number; extraction: number };
+  twinsCreatedThisMonth: number; pctValuesAutoVerified: number | null; avgRequestToExtractionDays: number | null;
 }
+interface AttentionItem { type: "fraud" | "flagged" | "hitl"; requestId: number | null; title: string; detail: string; }
+interface SearchResult { kind: "request" | "checklistItem" | "extractedValue"; requestId: number; title: string; detail: string; }
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   draft: { label: "Draft", className: "badge info" },
@@ -237,6 +242,10 @@ export default function DashboardPage() {
   const [viewingFilesFor, setViewingFilesFor] = useState<number | null>(null);
   const [customizing, setCustomizing] = useState(false);
   const [customizeError, setCustomizeError] = useState<string | null>(null);
+  const [attention, setAttention] = useState<AttentionItem[] | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -260,6 +269,23 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => { if (me) loadRequests(); }, [me, loadRequests]);
+
+  useEffect(() => {
+    if (!me) return;
+    fetch("/api/requests/needs-attention").then(r => r.json()).then(d => setAttention(d.items));
+  }, [me, requests]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults(null); return; }
+    setSearching(true);
+    const handle = setTimeout(() => {
+      fetch(`/api/requests/search?q=${encodeURIComponent(searchQuery)}`)
+        .then(r => r.json())
+        .then(d => setSearchResults(d.results))
+        .finally(() => setSearching(false));
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
 
   const validateFields = async () => {
     const res = await fetch("/api/requests/validate", {
@@ -371,6 +397,44 @@ export default function DashboardPage() {
           <div className="who">Commercial banking <span className="avatar">{initials(me.fullName)}</span></div>
         </div>
 
+        <WorkspaceNav activeCount={metrics?.activeRequests} />
+
+        <div style={{ position: "relative", marginBottom: 18 }}>
+          <input type="search" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search the document estate — borrower, company, checklist item, extracted value…"
+            style={{ width: "100%", padding: "11px 16px", borderRadius: 10, border: "1.5px solid var(--line)", fontSize: 13.5 }} />
+          {searchQuery.trim() && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10,
+              background: "white", border: "1px solid var(--line)", borderRadius: 10,
+              boxShadow: "0 12px 30px -12px rgba(16,28,66,.25)", maxHeight: 320, overflowY: "auto",
+            }}>
+              {searching && <p style={{ padding: 14, fontSize: 12.5, color: "var(--muted)" }}>Searching…</p>}
+              {!searching && searchResults?.length === 0 && (
+                <p style={{ padding: 14, fontSize: 12.5, color: "var(--muted)" }}>No matches for &quot;{searchQuery}&quot;.</p>
+              )}
+              {!searching && searchResults?.map((r, i) => (
+                <div key={i} onClick={() => { router.push(`/parking-bay/${r.requestId}`); setSearchQuery(""); }}
+                  style={{ padding: "10px 14px", borderTop: i > 0 ? "1px solid var(--line-soft)" : "none", cursor: "pointer", fontSize: 13 }}>
+                  <span className="badge info" style={{ marginRight: 8, fontSize: 10 }}>
+                    {r.kind === "request" ? "Request" : r.kind === "checklistItem" ? "Checklist item" : "Extracted value"}
+                  </span>
+                  <b>{r.title}</b>
+                  {r.detail && <span style={{ color: "var(--muted)" }}> · {r.detail}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {metrics && (
+          <div className="statstrip">
+            <span><b>{metrics.twinsCreatedThisMonth}</b> twins created this month</span>
+            <span><b>{metrics.pctValuesAutoVerified !== null ? `${metrics.pctValuesAutoVerified}%` : "—"}</b> values auto-verified · no touch</span>
+            <span><b>{metrics.avgRequestToExtractionDays !== null ? `${metrics.avgRequestToExtractionDays} days` : "—"}</b> avg request → extraction</span>
+          </div>
+        )}
+
         <div className="metrics">
           <div className="metric">
             <div className="k">Active requests</div>
@@ -389,6 +453,56 @@ export default function DashboardPage() {
             <div className="v bad">{metrics?.sessionsEndedFraud ?? "—"}</div>
           </div>
         </div>
+
+        {metrics && (metrics.loansByStage.documents + metrics.loansByStage.extraction > 0) && (
+          <div className="panel">
+            <div className="phead">
+              <h4>Loans in flight — by stage</h4>
+              <span className="note">Documents · Extraction only — later stages aren&apos;t built yet</span>
+            </div>
+            {(() => {
+              const { documents, extraction } = metrics.loansByStage;
+              const total = documents + extraction;
+              return (
+                <>
+                  <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", marginBottom: 10 }}>
+                    <div style={{ width: `${(documents / total) * 100}%`, background: "var(--navy)" }} title={`Documents · ${documents}`} />
+                    <div style={{ width: `${(extraction / total) * 100}%`, background: "var(--gold)" }} title={`Extraction · ${extraction}`} />
+                  </div>
+                  <div style={{ display: "flex", gap: 16, fontSize: 12.5, color: "var(--muted)" }}>
+                    <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--navy)", marginRight: 6 }} />Documents · {documents}</span>
+                    <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--gold)", marginRight: 6 }} />Extraction · {extraction}</span>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {attention && attention.length > 0 && (
+          <div className="panel">
+            <div className="phead"><h4>Needs attention</h4><span className="note">{attention.length} item{attention.length === 1 ? "" : "s"}</span></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {attention.map((a, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13 }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: "50%", marginTop: 5, flexShrink: 0,
+                    background: a.type === "fraud" ? "var(--bad)" : a.type === "flagged" ? "var(--gold)" : "var(--navy)",
+                  }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <b>{a.title}</b>
+                    {a.detail && <div style={{ fontSize: 12, color: "var(--muted)" }}>{a.detail}</div>}
+                  </div>
+                  {a.requestId !== null && (
+                    <button className="btn ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => router.push(`/parking-bay/${a.requestId}`)}>
+                      Open
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="panel">
           <div className="phead">

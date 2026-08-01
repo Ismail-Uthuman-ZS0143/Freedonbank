@@ -9,6 +9,9 @@ from . import views
 urlpatterns = [
     path('validate', views.validate_view),
     path('checklist-template', views.checklist_template_view),
+    path('activity', views.activity_view),
+    path('needs-attention', views.needs_attention_view),
+    path('search', views.search_view),
     path('<int:request_id>/resend', views.resend_view),
     path('<int:request_id>/email', views.latest_email_view),
     path('<int:request_id>/uploads', views.uploaded_files_view),

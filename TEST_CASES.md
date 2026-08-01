@@ -2,23 +2,28 @@
 
 Derived from `FBOV_Document_Request_Flow_Mock_v2.html` (9-step commercial-loan
 document request flow). **Steps 1 (banker sign-in), 2 (dashboard / create &amp;
-send request), 2b (customize & send secure upload link), 3 (secure request
-email), 4 (customer upload portal), 5 (session terminal states / reference
-number / confirmation email), 6 (parking bay review & review summary), and 7
-(twin extraction — real content extraction, see its scope-decision note)**
-are actually built; their cases are marked ✅ Automated and map to
-`backend/accounts/tests.py` and `backend/document_requests/tests.py` (155
-tests total, all passing). Steps 8–9 are 🔲 Planned — this is the test spec
-to build against, not yet runnable code, since those screens are still
-design-concept mockup only.
+send request), 2b (customize & send secure upload link), 2c (workspace nav &
+customer activity), 2d (search, stat strip, loans-by-stage, needs attention),
+3 (secure request email), 4 (customer upload portal), 5 (session terminal
+states / reference number / confirmation email), 6 (parking bay review &
+review summary), and 7 (twin extraction — real content extraction, see its
+scope-decision note)** are actually built; their cases are marked ✅
+Automated and map to `backend/accounts/tests.py` and
+`backend/document_requests/tests.py` (173 tests total, all passing). Steps
+8–9 are 🔲 Planned — this is the test spec to build against, not yet
+runnable code, since those screens are still design-concept mockup only.
 
-**Mockup note:** Steps 1-6 were rebuilt against `FBOV_Document_Request_Flow_Mock_v3.html`
-once it was provided (the v2 file above is kept for history). v3 also
-renumbers/adds steps beyond 6 (a new Step 9 "Credit report" and Step 10
-"Term sheet & commitment" push the old Step 9 "Customer activity log" to
-Step 11) -- the "Step 7/8/9" sections below still use the original v2
-numbering since those steps haven't been revisited against v3 yet. Reconcile
-the numbering when Step 7+ is next touched.
+**Mockup note:** Steps 1-6 were rebuilt against `FBOV_Document_Request_Flow_Mock_v3.html`,
+then Step 2 was extended twice more once `FBOV_Document_Request_Flow_Mock_v5.html`
+was provided -- first workspace nav + customer activity (2c), then search/
+stats/loans-by-stage/needs-attention (2d, after re-examining what was
+initially written off as needing infrastructure that doesn't exist) --
+v2/v3 are kept for history. v3 also renumbers/adds steps beyond
+6 (a new Step 9 "Credit report" and Step 10 "Term sheet & commitment" push
+the old Step 9 "Customer activity log" to Step 11) -- the "Step 7/8/9"
+sections below still use the original v2 numbering since those steps
+haven't been revisited against v3/v5 yet. Reconcile the numbering when
+Step 7+ is next touched.
 
 Status legend: ✅ Automated · 🟡 Manual-only (UI, needs a human/browser) · 🔲 Planned (feature not built yet)
 
@@ -193,6 +198,110 @@ Admin counts, and only then fires the actual send.
 | 2b.11 | Completion ignores Loan Admin items | All Lender items uploaded, Loan Admin item never touched | — | `status` -> `uploads_complete` anyway; Loan Admin item stays `pending` forever | ✅ `test_uploads_complete_once_all_lender_items_done_even_with_loan_admin_pending` — also verified live |
 | 2b.12 | Parking bay / review-completeness ignore Loan Admin items | Same mix | GET parking-bay | Loan Admin item absent from the list; `reviewComplete` reachable once only the Lender items are reviewed | ✅ `test_parking_bay_excludes_loan_admin_items`, `test_review_complete_ignores_loan_admin_items` — also verified live |
 | 2b.13 | Customize modal opens after field validation, before send | Frontend | Click "Customize & send" with valid fields | Modal opens with the real template, correct default checkboxes and live counts | 🟡 (backend verified live via curl; modal itself not independently automated) |
+
+---
+
+## Step 2c — Workspace Nav & Customer Activity ✅ Built (v5 mockup)
+
+**Scope decision, made explicitly with the user:** v5's Step 2 additions
+split cleanly into things buildable from data this project already logs
+(the workspace nav bar, a real per-request event trail) vs. things needing
+infrastructure that doesn't exist (search, portfolio stats, ticklers,
+covenants). **This section covers the first group.** See Step 2d below for
+the second pass, where most of the "infrastructure that doesn't exist"
+group turned out to be buildable for real after all, once broken down
+number by number.
+
+- `WorkspaceNav` shows two tabs -- Overview and Customer activity -- not the
+  mockup's five (Overview / Customer activity / Parking bay / Loans /
+  Portfolio). Parking bay, Loans, and Portfolio don't have a real *global*
+  landing page in this app (parking bay is per-request only; Loans/Portfolio
+  need pipeline stages beyond what's built) -- omitted rather than linked to
+  something that doesn't exist. It appears on all four real workspace
+  screens (dashboard, activity, parking bay, extraction) -- v5 adds the same
+  nav bar to Steps 6 and 7 too, not just Step 2.
+- The Customer Activity screen's event trail is assembled entirely from data
+  already logged elsewhere (`RequestEmail`, `UploadedFile`, `ExtractionEvent`)
+  -- no new event-logging model was needed. `audit.write` rows are excluded
+  from this human-facing view (they duplicate the stage event immediately
+  before them -- still visible in the raw admin/audit trail, just not here).
+
+Backend: new `GET /api/requests/activity` endpoint, `_activity_events()` in
+`document_requests/views.py`. Tests in `CustomerActivityTests`
+(`backend/document_requests/tests.py`, 5 tests).
+Frontend: new `app/components/WorkspaceNav.tsx` (dashboard, activity,
+parking bay, extraction), new `app/activity/page.tsx`.
+
+| ID | Case | Given | When | Then | Status |
+|----|------|-------|------|------|--------|
+| 2c.1 | Activity requires auth | Not logged in | GET `/api/requests/activity` | 403 | ✅ `test_activity_requires_auth` |
+| 2c.2 | Draft requests excluded | A draft + a sent request | GET activity | Only the sent one appears | ✅ `test_activity_excludes_drafts` |
+| 2c.3 | Send event is real | Request just sent | GET activity | "Secure request sent" event present, timestamp matches the logged email | ✅ `test_activity_includes_the_sent_email_event` |
+| 2c.4 | Upload + review events, chronological | Upload then flag a document | GET activity | Both events present, `at` timestamps strictly non-decreasing (oldest first, matching the mockup's reading order) | ✅ `test_activity_includes_upload_and_review_events_in_chronological_order` — also verified live against real data |
+| 2c.5 | Twin/business-twin events included, `audit.write` excluded | Extraction kicked off | GET activity | `document_twin.received` / `business_twin.relationship` present; `audit.write` absent | ✅ `test_activity_twin_events_included_but_audit_write_excluded` |
+
+---
+
+## Step 2d — Search, Stat Strip, Loans-by-Stage & Needs Attention ✅ Built (partial — v5 mockup)
+
+**Scope decision #2 on this same set of widgets:** re-examined the
+"infrastructure that doesn't exist" list from Step 2c number by number
+instead of writing the whole group off. Result: search, the stat strip, and
+"Needs attention" turned out to be real, simple queries over data already
+in the database -- only genuinely un-buildable pieces (tickler/reminder
+scheduling, covenant/DSCR tracking, "This week"/"Portfolio pulse" rails)
+stayed deferred.
+
+- **Search** -- real substring matching (`icontains`) over
+  `DocumentRequest` (borrower/company/reference/email), `ChecklistItem`
+  (name), and `ExtractedValue` (field name/value). No semantic/AI search --
+  it can't find "documents about cash flow", only literal text matches.
+- **Stat strip** -- `twinsCreatedThisMonth` (real count), `pctValuesAutoVerified`
+  (real: `confidence >= CONFIDENCE_ROUTING_THRESHOLD` / total, `null` when
+  zero values exist -- not a fake 0%), `avgRequestToExtractionDays` (real:
+  average of `extraction_queued_at - sent_at` across requests that reached
+  extraction, `null` when none have). "Ticklers scheduled" and "covenants
+  tracked" are NOT included -- no such systems exist.
+- **Loans by stage** -- only the two real stages this project tracks,
+  Documents and Extraction. The mockup's Credit review/Term sheet/Decision/
+  Commitment/Signed/Processing stages are omitted entirely rather than shown
+  as a fake 0 (same principle as the parking-bay `LoanStatusStepper`).
+- **Needs attention** -- three real sources: fraud-stopped sessions
+  (`UploadSession.fraud_reason`), flagged documents (`hasFlaggedItems`'
+  same underlying query), and a single aggregate count of low-confidence
+  `ExtractedValue` rows ("N values in HITL queue") -- honestly labeled as
+  having no review/handoff screen yet, since Step 8 isn't built. The
+  mockup's tickler-escalation item is NOT included -- no reminder system.
+- **Not built, explicit gap:** "This week" (ticklers, payment-due
+  notifications, expected annual-review docs) and "Portfolio pulse"
+  (covenant compliance %, DSCR watchlist, advisory flags, "docs collected
+  without chasing" %) -- all need a reminder/scheduling system and/or a
+  covenant data model that don't exist in this project.
+
+Backend: `_stat_strip_metrics()` / `_loans_by_stage()` folded into
+`GET /api/requests`'s existing `metrics` object; new `GET
+/api/requests/needs-attention` and `GET /api/requests/search` endpoints in
+`document_requests/views.py`. Tests in `NeedsAttentionTests`, `SearchTests`,
+plus two new cases in `MetricsTests` (13 tests total for this pass, 173
+across the whole backend).
+Frontend: `app/dashboard/page.tsx` gained a live-search input (debounced,
+dropdown results linking into parking bay), a `.statstrip` panel, a
+"Loans in flight" segmented bar (only rendered once there's at least one
+loan in flight -- no empty chart), and a "Needs attention" panel (only
+rendered when non-empty).
+
+| ID | Case | Given | When | Then | Status |
+|----|------|-------|------|------|--------|
+| 2d.1 | Stat-strip metrics are `null`, not a fake 0, when nothing exists | Fresh DB | GET `/api/requests` | `pctValuesAutoVerified` and `avgRequestToExtractionDays` both `null`; `twinsCreatedThisMonth` a real (legitimately 0) count | ✅ `test_stat_strip_metrics_are_null_not_fake_zero_when_nothing_exists_yet` |
+| 2d.2 | Loans-by-stage counts only the two real stages | One sent, not-yet-queued request | GET `/api/requests` | `{documents: 1, extraction: 0}` | ✅ `test_loans_by_stage_counts_only_the_two_real_stages` — also verified live |
+| 2d.3 | Needs-attention requires auth | Not logged in | GET needs-attention | 403 | ✅ `test_requires_auth` (NeedsAttentionTests) |
+| 2d.4 | Fraud case surfaces with its real reason | Guard tripped | GET needs-attention | `type: 'fraud'` item, detail matches the real `fraud_reason` | ✅ `test_fraud_stopped_request_surfaces` — also verified live against real data |
+| 2d.5 | Flagged document surfaces with its real comment | Item flagged | GET needs-attention | `type: 'flagged'` item, detail == the real review comment verbatim | ✅ `test_flagged_document_surfaces` — also verified live |
+| 2d.6 | Low-confidence values surface as one aggregate count | Mixed-confidence `ExtractedValue`s | GET needs-attention | Single `type: 'hitl'` item, count matches real rows below threshold | ✅ `test_low_confidence_values_surface_as_a_single_hitl_count` |
+| 2d.7 | Search requires auth | Not logged in | GET search | 403 | ✅ `test_requires_auth` (SearchTests) |
+| 2d.8 | Search matches request/checklist-item/extracted-value fields | Real data with a known substring | GET `search?q=...` | Correct `kind` + `requestId` per match | ✅ `test_matches_request_by_company_name`, `test_matches_checklist_item_name`, `test_matches_extracted_value` — also verified live |
+| 2d.9 | Empty query / no match returns empty, not an error | — | GET `search?q=` or a nonsense query | `{results: []}` | ✅ `test_empty_query_returns_no_results`, `test_no_match_returns_empty` |
+| 2d.10 | Tickler/covenant-driven widgets | — | — | **Not built** -- no reminder/scheduling system, no covenant/DSCR data model. Explicit scope decision, not a gap | 🔲 Deferred (scope decision) |
 
 ---
 

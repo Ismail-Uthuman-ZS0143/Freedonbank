@@ -1,6 +1,7 @@
 import secrets
 from datetime import timedelta
 
+from django.db.models import Avg, DurationField, ExpressionWrapper, F, Q
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes, parser_classes
@@ -120,6 +121,116 @@ def checklist_template_view(request):
     })
 
 
+@api_view(['GET'])
+def needs_attention_view(request):
+    """v5's 'Needs attention' rail -- every item here comes from data this
+    project actually tracks. The mockup's tickler-escalation item is NOT
+    included: no reminder/scheduling system exists to back it."""
+    items = []
+
+    for r in DocumentRequest.objects.filter(status='fraud_stopped').select_related('upload_session'):
+        session = getattr(r, 'upload_session', None)
+        items.append({
+            'type': 'fraud', 'requestId': r.id,
+            'title': f'Fraud case — {r.borrower_name}',
+            'detail': session.fraud_reason if session and session.fraud_reason else 'Session ended — fraud guard',
+        })
+
+    flagged_items = ChecklistItem.objects.filter(
+        current_file__review_status='flagged',
+    ).select_related('current_file', 'document_request')
+    for item in flagged_items:
+        items.append({
+            'type': 'flagged', 'requestId': item.document_request_id,
+            'title': f'Flagged doc — {item.name}',
+            'detail': item.current_file.review_comment,
+        })
+
+    hitl_count = ExtractedValue.objects.filter(confidence__lt=CONFIDENCE_ROUTING_THRESHOLD).count()
+    if hitl_count:
+        items.append({
+            'type': 'hitl', 'requestId': None,
+            'title': f'{hitl_count} value(s) in HITL queue',
+            'detail': 'Low-confidence extracted values -- no review/handoff screen exists yet (Step 8 not built)',
+        })
+
+    return Response({'items': items})
+
+
+@api_view(['GET'])
+def search_view(request):
+    """v5's document-estate search -- real substring matching over requests,
+    checklist items, and extracted values (no semantic/AI search exists)."""
+    query = (request.GET.get('q') or '').strip()
+    if not query:
+        return Response({'results': []})
+
+    results = []
+    for r in DocumentRequest.objects.filter(
+        Q(borrower_name__icontains=query) | Q(company_name__icontains=query)
+        | Q(reference_number__icontains=query) | Q(email__icontains=query),
+    )[:10]:
+        results.append({
+            'kind': 'request', 'requestId': r.id,
+            'title': f'{r.borrower_name} · {r.company_name}', 'detail': r.reference_number or r.status,
+        })
+
+    for item in ChecklistItem.objects.filter(name__icontains=query).select_related('document_request')[:10]:
+        results.append({
+            'kind': 'checklistItem', 'requestId': item.document_request_id,
+            'title': item.name, 'detail': item.document_request.company_name or item.document_request.borrower_name,
+        })
+
+    for v in ExtractedValue.objects.filter(
+        Q(field_name__icontains=query) | Q(value__icontains=query),
+    ).select_related('document_twin__document_request')[:10]:
+        results.append({
+            'kind': 'extractedValue', 'requestId': v.document_twin.document_request_id,
+            'title': f'{v.field_name}: {v.value}', 'detail': v.source,
+        })
+
+    return Response({'results': results})
+
+
+def _stat_strip_metrics():
+    """v5's dashboard stat strip -- every number here is a real query, not a
+    mockup placeholder. 'Ticklers scheduled' and 'covenants tracked' from
+    the mockup are NOT included: no reminder/scheduling system or covenant
+    data model exists in this project."""
+    month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    twins_this_month = DocumentTwin.objects.filter(received_at__gte=month_start).count()
+
+    total_values = ExtractedValue.objects.count()
+    verified_values = ExtractedValue.objects.filter(confidence__gte=CONFIDENCE_ROUTING_THRESHOLD).count()
+    pct_auto_verified = round(verified_values / total_values * 100) if total_values else None
+
+    avg_delta = DocumentRequest.objects.filter(
+        extraction_queued_at__isnull=False, sent_at__isnull=False,
+    ).annotate(
+        turnaround=ExpressionWrapper(F('extraction_queued_at') - F('sent_at'), output_field=DurationField()),
+    ).aggregate(avg=Avg('turnaround'))['avg']
+    avg_request_to_extraction_days = round(avg_delta.total_seconds() / 86400, 1) if avg_delta else None
+
+    return {
+        'twinsCreatedThisMonth': twins_this_month,
+        'pctValuesAutoVerified': pct_auto_verified,
+        'avgRequestToExtractionDays': avg_request_to_extraction_days,
+    }
+
+
+def _loans_by_stage():
+    """Only the two stages this project actually tracks -- Documents (sent
+    or uploads complete, not yet queued for extraction) and Extraction
+    (queued). The mockup's Credit review/Commitment stages don't exist yet,
+    so they're omitted rather than shown as a fake 0."""
+    return {
+        'documents': DocumentRequest.objects.filter(
+            status__in=['sent', 'uploads_complete'], extraction_queued_at__isnull=True,
+        ).count(),
+        'extraction': DocumentRequest.objects.filter(extraction_queued_at__isnull=False).count(),
+    }
+
+
 @api_view(['GET', 'POST'])
 def list_create_view(request):
     if request.method == 'GET':
@@ -137,6 +248,8 @@ def list_create_view(request):
                 'docsInParkingBay': UploadedFile.objects.count(),
                 'awaitingCustomer': awaiting,
                 'sessionsEndedFraud': requests_qs.filter(status='fraud_stopped').count(),
+                'loansByStage': _loans_by_stage(),
+                **_stat_strip_metrics(),
             },
         })
 
@@ -222,6 +335,69 @@ def latest_email_view(request, request_id):
         'subject': email.subject,
         'bodyText': email.body_text,
         'sentAt': email.sent_at.isoformat(),
+    })
+
+
+EMAIL_ACTIVITY = {
+    'request': ('bank', 'Secure request sent'),
+    'fraud_alert': ('alert', 'Session ended — fraud guard'),
+    'confirmation': ('system', 'Upload completion confirmation sent'),
+    'review_flags': ('bank', 'Document(s) re-requested'),
+}
+
+
+def _activity_events(doc_request):
+    """A real, chronological event trail for one request -- built entirely
+    from data already logged elsewhere (RequestEmail, UploadedFile,
+    ExtractionEvent), not a synthesized/fabricated summary. `audit.write`
+    rows are skipped here -- they're a duplicate of the stage event right
+    before them, useful in the raw audit log but just noise in a
+    human-facing activity feed."""
+    events = []
+
+    for email in doc_request.emails.all():
+        event_type, title = EMAIL_ACTIVITY.get(email.kind, ('system', email.subject))
+        events.append({'type': event_type, 'title': title, 'detail': email.subject, 'at': email.sent_at})
+
+    for upload in doc_request.uploaded_files.filter(checklist_item__audience='lender').select_related('checklist_item'):
+        item_name = upload.checklist_item.name if upload.checklist_item else ''
+        events.append({
+            'type': 'customer', 'title': f'{upload.file_name} uploaded',
+            'detail': item_name, 'at': upload.uploaded_at,
+        })
+        if upload.reviewed_at:
+            label = {'approved': 'approved', 'flagged': 'flagged for re-upload'}.get(upload.review_status, upload.review_status)
+            events.append({
+                'type': 'bank', 'title': f'{upload.file_name} {label}',
+                'detail': upload.review_comment, 'at': upload.reviewed_at,
+            })
+
+    for ev in doc_request.extraction_events.exclude(event_type='audit.write'):
+        events.append({'type': 'system', 'title': ev.event_type, 'detail': ev.detail, 'at': ev.created_at})
+
+    events.sort(key=lambda e: e['at'])
+    return [{**e, 'at': e['at'].isoformat()} for e in events]
+
+
+@api_view(['GET'])
+def activity_view(request):
+    """Step 2's 'Customer activity' tab -- every non-draft request's real
+    event trail in one place. No search/portfolio-analytics widgets from
+    the mockup are built here (ticklers, covenant tracking, avg
+    request-to-extraction time, etc. all need infrastructure this project
+    doesn't have) -- this is strictly the real, already-logged event data."""
+    requests_qs = DocumentRequest.objects.exclude(status='draft').select_related().prefetch_related(
+        'emails', 'uploaded_files__checklist_item', 'extraction_events',
+    )
+    return Response({
+        'requests': [{
+            'id': r.id,
+            'borrowerName': r.borrower_name,
+            'companyName': r.company_name,
+            'referenceNumber': r.reference_number,
+            'status': r.status,
+            'events': _activity_events(r),
+        } for r in requests_qs],
     })
 
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import WorkspaceNav from "../../components/WorkspaceNav";
 
 interface Me { id: number; email: string; fullName: string; isStaff: boolean; }
 
@@ -149,6 +150,8 @@ export default function ExtractionPage() {
               <h3>Twin extraction — watch it happen</h3>
               <div className="who">{data.referenceNumber && <span>Reference {data.referenceNumber}</span>}</div>
             </div>
+
+            <WorkspaceNav />
 
             {actionError && <p className="formnote" style={{ marginBottom: 16 }}>{actionError}</p>}
 

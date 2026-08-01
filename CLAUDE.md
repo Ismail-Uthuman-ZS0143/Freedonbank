@@ -149,6 +149,95 @@ since those steps haven't been touched since v3 arrived -- reconcile the
 numbering the next time Step 7+ is revisited, rather than assuming it still
 lines up.
 
+## Step 2c — Workspace nav & customer activity — done (partial, v5)
+`FBOV_Document_Request_Flow_Mock_v5.html` arrived and grew Step 2
+substantially: a workspace nav tab bar, a document-estate search bar, a
+portfolio-wide stat strip ("218 twins created this month", etc.), a "Loans
+in flight by stage" chart, and three sidebar rails (Needs attention / This
+week / Portfolio pulse) driven by tickler/reminder scheduling and
+covenant/DSCR tracking. Steps 1/3/4/5 were byte-identical between v3 and
+v5; Step 6 only gained the same nav bar.
+
+**Asked the user which of this to build, since most of it needs
+infrastructure that doesn't exist:** search over extracted values, a
+reminder/tickler system, and a covenant/DSCR data model. **Answer: nav bar +
+Customer Activity Log only, real data, skip the rest** (search bar, stat
+strip, loans-by-stage chart, all three sidebar rails) -- explicitly
+documented as a scope decision in `TEST_CASES.md`, not silently dropped.
+
+What got built:
+- `WorkspaceNav` (`app/components/WorkspaceNav.tsx`) -- two tabs, Overview
+  and Customer activity, not the mockup's five. Parking bay/Loans/Portfolio
+  were left out because they don't have a real *global* landing page here
+  (parking bay is per-request only; Loans/Portfolio need pipeline stages
+  beyond what's built) -- no point linking to something that isn't real.
+- `GET /api/requests/activity` + `_activity_events()` in
+  `document_requests/views.py` -- assembles a real, chronological,
+  per-request event trail entirely from data already logged elsewhere
+  (`RequestEmail`, `UploadedFile`, `ExtractionEvent`). No new event-logging
+  model needed. `audit.write` rows are filtered out of this human-facing
+  view (pure duplicate of the stage event right before them -- still in the
+  raw audit trail via admin, just not shown here).
+- `app/activity/page.tsx` -- one card per non-draft request, dot-typed
+  timeline (bank/customer/system/alert) matching the mockup's legend.
+
+5 more tests in `CustomerActivityTests` (`backend/document_requests/tests.py`,
+160 total across the whole backend). Verified live against real production
+data already in the dev database (not synthetic test rows) -- confirmed
+real upload/review/twin events appear in the correct chronological order
+with `audit.write` correctly excluded.
+
+**Gotcha caught by the user, fixed same session:** the nav bar only got
+wired into the dashboard and activity pages at first -- v5 actually adds it
+to Steps 6 and 7 too (parking bay, extraction), not just Step 2. Added
+`<WorkspaceNav />` to `app/parking-bay/[id]/page.tsx` and
+`app/extraction/[id]/page.tsx` as well.
+
+## Step 2d — Search, stat strip, loans-by-stage, needs attention — done (partial, v5)
+Went back and re-examined the "needs infrastructure that doesn't exist" list
+from Step 2c, number by number instead of writing the whole group off.
+**Most of it turned out to be real, simple queries over data already in the
+database** -- the earlier scope call was too conservative. Asked the user
+again with the more granular breakdown; **answer: build all the real-data
+ones.**
+
+What's real now:
+- **Search** (`GET /api/requests/search?q=`) -- substring match
+  (`icontains`) across `DocumentRequest` (borrower/company/reference/email),
+  `ChecklistItem.name`, and `ExtractedValue` (field_name/value). No
+  semantic search, just literal text matching -- honestly labeled as such.
+- **Stat strip** -- `twinsCreatedThisMonth` (real count),
+  `pctValuesAutoVerified` (real: verified/total `ExtractedValue`s at the
+  `CONFIDENCE_ROUTING_THRESHOLD` cutoff, `null` -- not a fake 0% -- when no
+  values exist anywhere yet), `avgRequestToExtractionDays` (real: average
+  `extraction_queued_at - sent_at`, `null` when nothing's reached extraction).
+- **Loans by stage** -- only the two real stages (Documents, Extraction).
+  Credit review/Term sheet/Decision/Commitment/Signed/Processing are
+  omitted, not shown as fake zeros -- same principle as the parking-bay
+  `LoanStatusStepper`.
+- **Needs attention** (`GET /api/requests/needs-attention`) -- fraud-stopped
+  sessions (real `fraud_reason`), flagged documents (reuses the
+  `hasFlaggedItems` query, shows the real comment), and a single aggregate
+  "N values in HITL queue" count from real low-confidence `ExtractedValue`
+  rows -- honestly labeled as having no review/handoff screen yet since
+  Step 8 isn't built.
+- **Still not built, explicit gap:** "This week" (ticklers, payment-due
+  notices, expected annual-review docs) and "Portfolio pulse" (covenant
+  compliance %, DSCR watchlist, advisory flags, "docs collected without
+  chasing" %) -- both genuinely need a reminder/scheduling system and/or a
+  covenant data model that don't exist here.
+
+13 more tests (`NeedsAttentionTests`, `SearchTests`, two new `MetricsTests`
+cases), 173 total across the whole backend. Frontend:
+`app/dashboard/page.tsx` gained a debounced live-search box (dropdown
+results link straight into parking bay), a `.statstrip` panel (new CSS
+class in `globals.css`), a "Loans in flight" segmented bar (only renders
+once something's actually in flight), and a "Needs attention" panel (only
+renders when non-empty -- no empty-state chrome for a feature with nothing
+to show). Verified live against real production data: real flagged-doc
+entries, real loans-by-stage counts, real search matches on "Intics"
+returning the actual dev-database requests.
+
 ## Step 3 — Secure request email — done (logged, not delivered)
 `document_requests/email_service.py` composes the exact mockup-template
 email (greeting, the request's actual selected Lender items from Step 2b's
