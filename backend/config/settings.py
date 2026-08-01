@@ -25,6 +25,25 @@ UPLOAD_STORAGE_ROOT = os.environ.get(
 # upload.freedombankva.com domain never resolves to anything).
 FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:3005')
 
+# Real outbound email delivery -- direct-to-MX, mirroring the pattern
+# already used in the sibling StackPulse project (no SMTP relay/provider
+# account, no credentials: resolve the recipient's real MX record and hand
+# the message off directly). See document_requests/mail_delivery.py.
+MAIL_ENABLED = os.environ.get('MAIL_ENABLED', 'true').lower() == 'true'
+MAIL_FROM_ADDRESS = os.environ.get('MAIL_FROM_ADDRESS', 'requests@freedombankva.com')
+MAIL_FROM_NAME = os.environ.get('MAIL_FROM_NAME', 'Freedom Bank of Virginia')
+# Fails closed like StackPulse's DomainWhitelistService: empty by default
+# means every recipient is blocked until explicitly configured.
+MAIL_ALLOWED_DOMAINS = {
+    d.strip().lower() for d in os.environ.get('MAIL_ALLOWED_DOMAINS', '').split(',') if d.strip()
+}
+MAIL_SMTP_PORT = int(os.environ.get('MAIL_SMTP_PORT', '25'))
+# Test override: set to "host:port" to route all outbound mail there
+# instead of resolving/connecting to the real MX host.
+MAIL_TEST_SERVER = os.environ.get('MAIL_TEST_SERVER', '')
+MAIL_TIMEOUT_SECONDS = int(os.environ.get('MAIL_TIMEOUT_SECONDS', '10'))
+MAIL_DNS_TIMEOUT_SECONDS = int(os.environ.get('MAIL_DNS_TIMEOUT_SECONDS', '5'))
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',

@@ -11,3 +11,7 @@ python-docx==1.1.2
 openpyxl==3.1.5
 pytesseract==0.3.13
 pillow==11.3.0
+
+# Real outbound email delivery (document_requests/mail_delivery.py) -- MX
+# record lookups for direct-to-MX sending, no SMTP relay/provider account.
+dnspython==2.8.0

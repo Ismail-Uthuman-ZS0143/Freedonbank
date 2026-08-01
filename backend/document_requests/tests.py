@@ -1,6 +1,7 @@
 import io
 import os
 import tempfile
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -10,10 +11,11 @@ from rest_framework import status
 
 from .models import (
     DocumentRequest, RequestEmail, ChecklistItem, UploadedFile, UploadSession,
-    DocumentTwin, BusinessTwin, ExtractionEvent, ExtractedValue,
+    DocumentTwin, BusinessTwin, ExtractionEvent, ExtractedValue, ChecklistPreference,
 )
 from . import checklist as checklist_module
 from . import content_extraction
+from . import mail_delivery
 
 VALIDATE_URL = '/api/requests/validate'
 LIST_CREATE_URL = '/api/requests'
@@ -38,14 +40,23 @@ TEST_CHECKLIST_NAMES = [item['name'] for item in TEST_CHECKLIST_SELECTION]
 _test_upload_dir = tempfile.TemporaryDirectory(prefix='cfs2_test_uploads_')
 _upload_root_override = override_settings(UPLOAD_STORAGE_ROOT=_test_upload_dir.name)
 
+# Real email delivery (mail_delivery.py) fails closed on an empty
+# MAIL_ALLOWED_DOMAINS by default, so tests never hit the real network as
+# long as .env doesn't set one -- but that's an implicit guarantee this
+# module shouldn't depend on. Force MAIL_ENABLED off explicitly so a future
+# .env change can never turn a test run into a flaky network-dependent one.
+_mail_disabled_override = override_settings(MAIL_ENABLED=False)
+
 
 def setUpModule():
     _upload_root_override.enable()
+    _mail_disabled_override.enable()
 
 
 def tearDownModule():
     _upload_root_override.disable()
     _test_upload_dir.cleanup()
+    _mail_disabled_override.disable()
 
 
 class AuthenticatedAPITestCase(APITestCase):
@@ -1303,6 +1314,68 @@ class ChecklistSelectionAtSendTests(AuthenticatedAPITestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(DocumentRequest.objects.filter(email=self.VALID['email']).exists())
 
+    def test_sending_uses_the_bankers_saved_preference_when_no_explicit_selection(self):
+        """v5: the checklist is configured once under Profile settings, not
+        rebuilt per request -- a plain 'Send secure request' (no
+        selectedItems in the body at all) must use whatever the banker
+        saved there, not the template's own default."""
+        self.client.post('/api/requests/checklist-preference', {'selectedItems': TEST_CHECKLIST_SELECTION}, format='json')
+
+        res = self.client.post(LIST_CREATE_URL, self.VALID, format='json')
+        doc_request = DocumentRequest.objects.get(id=res.data['id'])
+        names = list(doc_request.checklist_items.order_by('order').values_list('name', flat=True))
+        self.assertEqual(names, TEST_CHECKLIST_NAMES)
+
+
+class ChecklistPreferenceTests(AuthenticatedAPITestCase):
+    """v5's Profile settings > Document checklist -- a banker's saved
+    default, configured once rather than rebuilt per request."""
+
+    def test_requires_auth(self):
+        self.client.force_authenticate(user=None)
+        res = self.client.get('/api/requests/checklist-preference')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_get_falls_back_to_template_default_when_nothing_saved(self):
+        res = self.client.get('/api/requests/checklist-preference')
+        self.assertFalse(res.data['isSaved'])
+        names = {i['name'] for i in res.data['selectedItems']}
+        default_names = {name for _, name, _ in checklist_module.default_selection()}
+        self.assertEqual(names, default_names)
+
+    def test_save_and_get_round_trips(self):
+        self.client.post('/api/requests/checklist-preference', {'selectedItems': TEST_CHECKLIST_SELECTION}, format='json')
+        res = self.client.get('/api/requests/checklist-preference')
+        self.assertTrue(res.data['isSaved'])
+        names = [i['name'] for i in res.data['selectedItems']]
+        self.assertEqual(names, TEST_CHECKLIST_NAMES)
+
+    def test_save_rejects_unknown_item(self):
+        bogus = [{'category': 'Organizational documents / financial info', 'name': 'Not A Real Item'}]
+        res = self.client.post('/api/requests/checklist-preference', {'selectedItems': bogus}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(ChecklistPreference.objects.filter(banker=self.user).exists())
+
+    def test_save_rejects_empty_selection(self):
+        res = self.client.post('/api/requests/checklist-preference', {'selectedItems': []}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_resaving_overwrites_not_duplicates(self):
+        self.client.post('/api/requests/checklist-preference', {'selectedItems': TEST_CHECKLIST_SELECTION}, format='json')
+        other_selection = [{'category': 'Initial loan documents', 'name': 'Risk Rating Form'}]
+        self.client.post('/api/requests/checklist-preference', {'selectedItems': other_selection}, format='json')
+
+        self.assertEqual(ChecklistPreference.objects.filter(banker=self.user).count(), 1)
+        res = self.client.get('/api/requests/checklist-preference')
+        self.assertEqual([i['name'] for i in res.data['selectedItems']], ['Risk Rating Form'])
+
+    def test_preference_is_per_banker(self):
+        self.client.post('/api/requests/checklist-preference', {'selectedItems': TEST_CHECKLIST_SELECTION}, format='json')
+        other_banker = User.objects.create_user(username='other@freedombankva.com', email='other@freedombankva.com', password='x')
+        self.client.force_authenticate(user=other_banker)
+        res = self.client.get('/api/requests/checklist-preference')
+        self.assertFalse(res.data['isSaved'])  # other banker has no saved preference of their own
+
 
 class LenderLoanAdminSplitTests(AuthenticatedAPITestCase):
     """Loan Admin items are tracked as real ChecklistItem rows (banker-side)
@@ -1559,3 +1632,109 @@ class SearchTests(AuthenticatedAPITestCase):
         _make_sent_request(self.client, self.user)
         res = self.client.get('/api/requests/search?q=nonexistentxyz')
         self.assertEqual(res.data['results'], [])
+
+
+class MailDeliveryTests(TestCase):
+    """document_requests/mail_delivery.py -- real direct-to-MX delivery
+    logic (mirrors the sibling StackPulse project's approach), with
+    smtplib.SMTP mocked out so tests never touch the real network."""
+
+    def setUp(self):
+        mail_delivery.clear_mx_cache()
+
+    @override_settings(MAIL_ENABLED=False, MAIL_ALLOWED_DOMAINS={'example.com'})
+    def test_disabled_returns_not_attempted_without_calling_smtp(self):
+        with patch('document_requests.mail_delivery.smtplib.SMTP') as mock_smtp:
+            attempted, delivered = mail_delivery.send_direct_email('a@example.com', 'Subject', 'Body')
+        self.assertFalse(attempted)
+        self.assertFalse(delivered)
+        mock_smtp.assert_not_called()
+
+    @override_settings(MAIL_ENABLED=True, MAIL_ALLOWED_DOMAINS=set())
+    def test_domain_not_allowed_returns_not_attempted(self):
+        with patch('document_requests.mail_delivery.smtplib.SMTP') as mock_smtp:
+            attempted, delivered = mail_delivery.send_direct_email('a@notallowed.com', 'Subject', 'Body')
+        self.assertFalse(attempted)
+        self.assertFalse(delivered)
+        mock_smtp.assert_not_called()
+
+    @override_settings(MAIL_ENABLED=True, MAIL_ALLOWED_DOMAINS={'example.com'}, MAIL_TEST_SERVER='stub-host:2525')
+    def test_allowed_domain_sends_via_real_smtp_protocol_calls(self):
+        """MAIL_TEST_SERVER bypasses real MX resolution (same escape hatch
+        StackPulse uses) -- this exercises the real EHLO/STARTTLS/sendmail
+        call sequence against a mocked SMTP connection."""
+        mock_smtp_instance = MagicMock()
+        mock_smtp_instance.has_extn.return_value = True
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_smtp_instance
+        with patch('document_requests.mail_delivery.smtplib.SMTP', return_value=mock_smtp_cm) as mock_smtp:
+            attempted, delivered = mail_delivery.send_direct_email('a@example.com', 'Subject', 'Body text')
+
+        self.assertTrue(attempted)
+        self.assertTrue(delivered)
+        mock_smtp.assert_called_once_with('stub-host', 2525, timeout=10)
+        mock_smtp_instance.starttls.assert_called_once()
+        mock_smtp_instance.sendmail.assert_called_once()
+        to_addr = mock_smtp_instance.sendmail.call_args[0][1]
+        self.assertEqual(to_addr, ['a@example.com'])
+
+    @override_settings(MAIL_ENABLED=True, MAIL_ALLOWED_DOMAINS={'example.com'}, MAIL_TEST_SERVER='stub-host:2525')
+    def test_smtp_failure_returns_attempted_not_delivered_and_does_not_raise(self):
+        import smtplib as smtplib_module
+        with patch('document_requests.mail_delivery.smtplib.SMTP', side_effect=smtplib_module.SMTPConnectError(421, 'refused')):
+            attempted, delivered = mail_delivery.send_direct_email('a@example.com', 'Subject', 'Body')
+        self.assertTrue(attempted)  # a real SMTP conversation was genuinely opened
+        self.assertFalse(delivered)  # ...but it failed -- never raises either way
+
+    def test_mx_resolution_uses_dns_and_caches(self):
+        fake_record = MagicMock(preference=10, exchange='mail.example.com.')
+        with patch('document_requests.mail_delivery.dns.resolver.resolve', return_value=[fake_record]) as mock_resolve:
+            host1 = mail_delivery._resolve_mx('example.com')
+            host2 = mail_delivery._resolve_mx('example.com')
+        self.assertEqual(host1, 'mail.example.com')  # trailing dot stripped
+        self.assertEqual(host2, 'mail.example.com')
+        mock_resolve.assert_called_once()  # second call served from cache
+
+    def test_mx_resolution_falls_back_to_domain_on_dns_failure(self):
+        with patch('document_requests.mail_delivery.dns.resolver.resolve', side_effect=Exception('no DNS')):
+            host = mail_delivery._resolve_mx('unresolvable-domain.test')
+        self.assertEqual(host, 'unresolvable-domain.test')
+
+
+class EmailDeliveryIntegrationTests(AuthenticatedAPITestCase):
+    """email_service.py's real integration with mail_delivery.py -- the
+    RequestEmail audit row is always created, and delivery_attempted/
+    delivered reflect what mail_delivery.send_direct_email actually did."""
+
+    @override_settings(MAIL_ENABLED=True, MAIL_ALLOWED_DOMAINS={'meridianlogistics.com'}, MAIL_TEST_SERVER='stub-host:2525')
+    def test_successful_delivery_is_recorded_on_the_audit_row(self):
+        mock_smtp_instance = MagicMock()
+        mock_smtp_instance.has_extn.return_value = False
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_smtp_instance
+        with patch('document_requests.mail_delivery.smtplib.SMTP', return_value=mock_smtp_cm):
+            _make_sent_request(self.client, self.user)
+
+        email = RequestEmail.objects.get(kind='request')
+        self.assertTrue(email.delivery_attempted)
+        self.assertTrue(email.delivered)
+
+    @override_settings(MAIL_ENABLED=True, MAIL_ALLOWED_DOMAINS={'meridianlogistics.com'}, MAIL_TEST_SERVER='stub-host:2525')
+    def test_failed_delivery_still_creates_the_audit_row(self):
+        with patch('document_requests.mail_delivery.smtplib.SMTP', side_effect=OSError('connection refused')):
+            _make_sent_request(self.client, self.user)
+
+        email = RequestEmail.objects.get(kind='request')
+        self.assertTrue(email.delivery_attempted)
+        self.assertFalse(email.delivered)
+        self.assertTrue(email.body_text)  # the audit trail is intact regardless of delivery outcome
+
+    def test_disabled_by_default_in_tests_records_neither_attempted_nor_delivered(self):
+        """Guards the module-level MAIL_ENABLED=False override itself --
+        confirms delivery is genuinely skipped (not just failed) in the
+        normal test run, not just in the tests that explicitly re-enable it
+        above."""
+        _make_sent_request(self.client, self.user)
+        email = RequestEmail.objects.get(kind='request')
+        self.assertFalse(email.delivery_attempted)
+        self.assertFalse(email.delivered)

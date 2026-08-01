@@ -49,12 +49,13 @@ class DocumentRequest(models.Model):
 
 
 class RequestEmail(models.Model):
-    """Step 3: the secure request email (and Step 4's fraud alert, which
-    reuses this same log-only mechanism instead of a bespoke notification
-    system). No real mail provider is wired up yet -- 'sending' means
-    composing the exact content and logging it here (append-only), so it's
-    inspectable via the admin or the API rather than silently discarded or
-    faked as delivered."""
+    """Step 3's secure request email, Step 4's fraud alert, Step 5's
+    completion confirmation, and Step 6's review-flags re-request all log
+    here as an append-only audit row -- inspectable via the admin or the
+    API regardless of delivery outcome. `delivered` tracks whether
+    document_requests/mail_delivery.py's real direct-to-MX send actually
+    succeeded; this row is created either way, so a delivery failure is
+    never silently invisible."""
     KIND_CHOICES = [
         ('request', 'Secure document request'),
         ('fraud_alert', 'Fraud/session-guard alert'),
@@ -69,6 +70,8 @@ class RequestEmail(models.Model):
     subject = models.TextField()
     body_text = models.TextField()
     sent_at = models.DateTimeField(auto_now_add=True)
+    delivery_attempted = models.BooleanField(default=False)
+    delivered = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'request_emails'
@@ -313,3 +316,20 @@ class ExtractionEvent(models.Model):
 
     def __str__(self):
         return f'{self.event_type} ({self.created_at:%H:%M:%S})'
+
+
+class ChecklistPreference(models.Model):
+    """Step 2b (v5) -- a banker's saved default checklist, configured once
+    under Profile settings -> Document checklist rather than rebuilt on
+    every request. `selected_items` is a JSON list of {category, name}
+    objects; audience is always re-resolved from checklist.CHECKLIST_TEMPLATE
+    at send time (see views.py), never trusted from what's stored here."""
+    banker = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='checklist_preference')
+    selected_items = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'checklist_preferences'
+
+    def __str__(self):
+        return f'Checklist preference for {self.banker}'

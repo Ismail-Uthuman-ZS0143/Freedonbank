@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     DocumentRequest, RequestEmail, ChecklistItem, UploadedFile, UploadSession,
-    DocumentTwin, BusinessTwin, ExtractionEvent, ExtractedValue,
+    DocumentTwin, BusinessTwin, ExtractionEvent, ExtractedValue, ChecklistPreference,
 )
 
 
@@ -99,3 +99,8 @@ class ExtractionEventAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+@admin.register(ChecklistPreference)
+class ChecklistPreferenceAdmin(admin.ModelAdmin):
+    list_display = ('banker', 'updated_at')

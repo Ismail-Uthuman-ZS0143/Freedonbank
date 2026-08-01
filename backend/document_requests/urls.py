@@ -9,6 +9,7 @@ from . import views
 urlpatterns = [
     path('validate', views.validate_view),
     path('checklist-template', views.checklist_template_view),
+    path('checklist-preference', views.checklist_preference_view),
     path('activity', views.activity_view),
     path('needs-attention', views.needs_attention_view),
     path('search', views.search_view),

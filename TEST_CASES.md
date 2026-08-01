@@ -9,16 +9,19 @@ states / reference number / confirmation email), 6 (parking bay review &
 review summary), and 7 (twin extraction — real content extraction, see its
 scope-decision note)** are actually built; their cases are marked ✅
 Automated and map to `backend/accounts/tests.py` and
-`backend/document_requests/tests.py` (173 tests total, all passing). Steps
+`backend/document_requests/tests.py` (190 tests total, all passing). Steps
 8–9 are 🔲 Planned — this is the test spec to build against, not yet
 runnable code, since those screens are still design-concept mockup only.
 
 **Mockup note:** Steps 1-6 were rebuilt against `FBOV_Document_Request_Flow_Mock_v3.html`,
-then Step 2 was extended twice more once `FBOV_Document_Request_Flow_Mock_v5.html`
-was provided -- first workspace nav + customer activity (2c), then search/
-stats/loans-by-stage/needs-attention (2d, after re-examining what was
-initially written off as needing infrastructure that doesn't exist) --
-v2/v3 are kept for history. v3 also renumbers/adds steps beyond
+then Step 2 was extended/corrected three more times once
+`FBOV_Document_Request_Flow_Mock_v5.html` was provided -- workspace nav +
+customer activity (2c), then search/stats/loans-by-stage/needs-attention
+(2d, after re-examining what was initially written off as needing
+infrastructure that doesn't exist), then a correction to Step 2b itself
+(the checklist customize step turned out to be a one-time profile setting
+in v5, not the per-request modal originally built -- see 2b's "Correction"
+note) -- v2/v3 are kept for history. v3 also renumbers/adds steps beyond
 6 (a new Step 9 "Credit report" and Step 10 "Term sheet & commitment" push
 the old Step 9 "Customer activity log" to Step 11) -- the "Step 7/8/9"
 sections below still use the original v2 numbering since those steps
@@ -177,11 +180,22 @@ and 400s on an unknown item. Falls back to the default selection when
 omitted, so every pre-existing "send" test/flow keeps working unchanged.
 Tests in `ChecklistTemplateTests`, `ChecklistSelectionAtSendTests`,
 `LenderLoanAdminSplitTests` (`backend/document_requests/tests.py`, 27
-tests total for this feature, 153 across the whole backend).
-Frontend: `app/dashboard/page.tsx` gained a `CustomizeModal` (Step 2b) that
-opens after field validation and before send -- fetches the template, lets
-the banker check/uncheck items grouped by category with live Lender/Loan
-Admin counts, and only then fires the actual send.
+tests total for this feature, 153 across the whole backend at the time this
+was first built).
+
+**Correction (caught by the user, same session): wrong interaction model at
+first.** The first pass built a per-request "Customize & Send" modal
+(`CustomizeModal`) that popped up after field validation on every send. The
+v5 mockup actually moved this to a **one-time profile setting** --
+`workspace.freedombankva.com/settings/checklist`, opened from the avatar
+menu, "Save configuration" -- and "Send secure request" on the dashboard
+goes back to being a single click that just uses whatever's saved there.
+The diff-based review that first built this missed that architecture change
+because it only compared byte ranges within the Step 2 section and didn't
+register the heading/button-copy change ("Checklist configuration — under
+profile settings" / "Save configuration" vs. the old "Customize & Send
+Secure Upload Link" / "Generate Secure Link"). Fixed: `CustomizeModal` was
+deleted; see the new subsection below for what replaced it.
 
 | ID | Case | Given | When | Then | Status |
 |----|------|-------|------|------|--------|
@@ -189,7 +203,7 @@ Admin counts, and only then fires the actual send.
 | 2b.2 | Template grouped by category, real order | — | GET checklist-template | Categories match `checklist.CATEGORIES` order exactly | ✅ `test_template_groups_items_by_category_in_order` |
 | 2b.3 | Template item count matches the master list | — | GET checklist-template | Total items across all categories == `len(CHECKLIST_TEMPLATE)` (47) | ✅ `test_template_total_item_count_matches_master_list` |
 | 2b.4 | Template reflects real default-selected + audience per item | — | GET checklist-template | e.g. "Corporate Resolution" -> selected, Lender; "Certificate of Fact" -> not selected, Loan Admin | ✅ `test_template_reflects_default_selection_and_audience` |
-| 2b.5 | No `selectedItems` falls back to the real default | — | POST `action=send`, no selection | Created items match the template's default-selected set exactly (27 items) | ✅ `test_no_selection_falls_back_to_real_default`, `test_default_selection_has_the_documented_lender_loan_admin_split` — also verified live |
+| 2b.5 | No `selectedItems` falls back to a real default | — | POST `action=send`, no selection, banker has no saved preference | Created items match the template's default-selected set exactly (27 items) | ✅ `test_no_selection_falls_back_to_real_default`, `test_default_selection_has_the_documented_lender_loan_admin_split` — also verified live |
 | 2b.6 | Explicit selection creates exactly those items | 3-item selection | POST `action=send` | Exactly those 3 `ChecklistItem` rows, in order | ✅ `test_explicit_selection_creates_exactly_those_items` |
 | 2b.7 | Audience is server-resolved, not client-supplied | Payload forges `audience: 'loan_admin'` on a real Lender item | POST `action=send` | Created item's audience is the template's real value (`lender`), forged value ignored | ✅ `test_audience_is_server_resolved_not_client_supplied` |
 | 2b.8 | Unknown checklist item rejected | Bogus `{category, name}` | POST `action=send` | 400, no `DocumentRequest` row created | ✅ `test_unknown_checklist_item_is_rejected` |
@@ -197,7 +211,45 @@ Admin counts, and only then fires the actual send.
 | 2b.10 | Customer can't upload against a Loan Admin item | Loan Admin item id | POST upload with that id | 400, item stays `pending` | ✅ `test_customer_cannot_upload_against_a_loan_admin_item` |
 | 2b.11 | Completion ignores Loan Admin items | All Lender items uploaded, Loan Admin item never touched | — | `status` -> `uploads_complete` anyway; Loan Admin item stays `pending` forever | ✅ `test_uploads_complete_once_all_lender_items_done_even_with_loan_admin_pending` — also verified live |
 | 2b.12 | Parking bay / review-completeness ignore Loan Admin items | Same mix | GET parking-bay | Loan Admin item absent from the list; `reviewComplete` reachable once only the Lender items are reviewed | ✅ `test_parking_bay_excludes_loan_admin_items`, `test_review_complete_ignores_loan_admin_items` — also verified live |
-| 2b.13 | Customize modal opens after field validation, before send | Frontend | Click "Customize & send" with valid fields | Modal opens with the real template, correct default checkboxes and live counts | 🟡 (backend verified live via curl; modal itself not independently automated) |
+
+---
+
+## Step 2b (continued) — Profile-Level Checklist Configuration ✅ Built (v5 correction)
+
+Copy requirement: *"The document checklist lives in the banker's profile
+settings, opened from the avatar menu — configured once, not rebuilt per
+request. Send secure request on the dashboard then simply emails the
+customer using this saved list."*
+
+Backend: new `ChecklistPreference` model (migration `0009`) -- one saved
+selection per banker, `selected_items` stored as JSON, audience always
+re-resolved from `CHECKLIST_TEMPLATE` at save *and* at send time (never
+trusted from what's stored). New `GET/POST /api/requests/checklist-preference`.
+`list_create_view`'s send branch now resolves the checklist in this
+priority order: explicit `selectedItems` in the request body (kept for
+tests/scripted sends) → the banker's saved `ChecklistPreference` → the
+template's own default selection. Tests in `ChecklistPreferenceTests`
+(`backend/document_requests/tests.py`) plus one new case in
+`ChecklistSelectionAtSendTests`, 181 tests total across the whole backend.
+Frontend: new `app/settings/checklist/page.tsx` (same categorized-checkbox
+UI the old modal had, now a real settings page with "Save configuration");
+`CustomizeModal` deleted from `app/dashboard/page.tsx`; "Send secure
+request" is a single click again; dashboard topbar gained a "Checklist
+settings" link (mockup: "opened from the avatar menu" -- this project
+doesn't have a full avatar dropdown menu yet, so it's a plain topbar link
+instead) and the factions note now reads "...document list comes from your
+configured checklist" with a link into settings.
+
+| ID | Case | Given | When | Then | Status |
+|----|------|-------|------|------|--------|
+| 2b.14 | Preference endpoint requires auth | Not logged in | GET checklist-preference | 403 | ✅ `test_requires_auth` (ChecklistPreferenceTests) |
+| 2b.15 | No saved preference falls back to template default | Banker never saved one | GET checklist-preference | `isSaved: false`, `selectedItems` matches the template's own default set | ✅ `test_get_falls_back_to_template_default_when_nothing_saved` — also verified live |
+| 2b.16 | Save and round-trip | — | POST then GET | Saved selection comes back exactly, `isSaved: true` | ✅ `test_save_and_get_round_trips` |
+| 2b.17 | Save rejects an unknown item | Bogus `{category, name}` | POST checklist-preference | 400, no row created | ✅ `test_save_rejects_unknown_item` |
+| 2b.18 | Save rejects an empty selection | `selectedItems: []` | POST checklist-preference | 400 | ✅ `test_save_rejects_empty_selection` |
+| 2b.19 | Re-saving overwrites, doesn't duplicate | Save twice with different selections | — | Exactly one `ChecklistPreference` row per banker; GET reflects the latest save | ✅ `test_resaving_overwrites_not_duplicates` |
+| 2b.20 | Preference is per-banker | Banker A saves one | Banker B checks their own | Banker B still sees `isSaved: false` -- A's preference doesn't leak | ✅ `test_preference_is_per_banker` |
+| 2b.21 | Plain send uses the banker's saved preference | Preference saved, `action=send` with **no** `selectedItems` in the body at all | POST `/api/requests` | Created items match the saved preference exactly, not the template default | ✅ `test_sending_uses_the_bankers_saved_preference_when_no_explicit_selection` — also verified live (real 2-item save → real plain send → exact match) |
 
 ---
 
@@ -305,51 +357,98 @@ rendered when non-empty).
 
 ---
 
-## Step 3 — The Secure Request Email ✅ Built (logged, not delivered)
+## Step 3 — The Secure Request Email ✅ Built (real direct-to-MX delivery)
 
 Copy requirement: *"authenticated (SPF / DKIM / DMARC)... listing exactly
 what's needed, with one action: log in and upload."*
 
-**Scope decision (explicit, not silently faked):** no real mail provider
-(SMTP/SendGrid/etc.) is wired up. "Sending" composes the exact email content
-and persists it as an append-only `RequestEmail` row (visible via admin, the
-API, and the dashboard's "View email" modal) plus an INFO-level console log
-line -- it is never actually delivered. SPF/DKIM/DMARC (3.1) and no-reply
-bounce handling (3.7) are therefore not applicable until a real provider is
-chosen; those rows stay 🔲 until that decision is made (see `CLAUDE.md`).
+**Scope decision, upgraded this session:** originally no real mail provider
+was wired up at all -- "sending" only composed content and logged it. The
+user asked to wire up real SMTP, then pointed at the sibling **StackPulse**
+project's own email implementation as the pattern to follow: direct-to-MX
+delivery (resolve the recipient domain's real MX record via DNS, connect
+straight to it, no SMTP relay/provider account, no API key/credentials
+anywhere). That's what got built here too -- see `mail_delivery.py`.
 
-Backend: `document_requests/email_service.py` + `checklist.py`, tests in
-`backend/document_requests/tests.py` (`RequestEmailTests`).
-Frontend: `EmailPreviewModal` in `app/dashboard/page.tsx`.
+- **Real, not faked:** DNS MX resolution (`dnspython`), a real SMTP
+  connection with opportunistic STARTTLS, a real domain allowlist that
+  fails closed (`MAIL_ALLOWED_DOMAINS` empty by default -- nothing sends
+  until explicitly configured, same as StackPulse's `DomainWhitelistService`).
+  `RequestEmail` gained `delivery_attempted`/`delivered` (migration `0010`)
+  so a delivery failure is recorded, not silently invisible -- the audit
+  row is created either way.
+- **Honest gap, unchanged:** SPF/DKIM/DMARC (3.1) still don't apply --
+  `freedombankva.com` is a fictional domain with no real DNS records
+  authorizing this server to send as it, so even a technically-correct
+  direct-to-MX send would likely be spam-flagged or rejected by a real
+  major provider. The *code path* is real; the *domain's sending
+  reputation* isn't, and can't be without owning a real domain. 3.7
+  (bounce handling) is also still out of scope -- direct-to-MX sending has
+  no bounce webhook to receive, unlike a provider like SendGrid.
+- **Environment constraint (not a code bug):** outbound port 25 is blocked
+  in this dev sandbox (confirmed via a direct socket connection test) --
+  live delivery to a real domain can't be verified from here. Verified
+  instead: (a) real DNS MX resolution against `gmail.com` succeeded, (b) a
+  real local SMTP listener (Python's `smtpd.DebuggingServer`, not a mock)
+  received a complete, correctly-formed message via `MAIL_TEST_SERVER`,
+  with the real checklist content and real upload link intact in the
+  base64-decoded body. This is the same test-server escape hatch
+  StackPulse itself uses for exactly this reason.
+
+Backend: `document_requests/mail_delivery.py` (new), `email_service.py`
+rewritten around a shared `_log_and_deliver()` helper, `RequestEmail`
+gained delivery-tracking fields, 6 new settings in `config/settings.py`
+(`MAIL_ENABLED`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`,
+`MAIL_ALLOWED_DOMAINS`, `MAIL_SMTP_PORT`, `MAIL_TEST_SERVER`,
+`MAIL_TIMEOUT_SECONDS`, `MAIL_DNS_TIMEOUT_SECONDS`). Tests in
+`MailDeliveryTests` (pure logic, `smtplib.SMTP` mocked -- no real network
+in the automated suite) and `EmailDeliveryIntegrationTests` (13 tests for
+this pass, 190 total across the whole backend). A module-level
+`MAIL_ENABLED=False` override guarantees the rest of the test suite can
+never attempt a real send regardless of `.env` contents.
+Frontend: `EmailPreviewModal` in `app/dashboard/page.tsx` now shows a real
+"✓ Delivered" / "✕ Delivery failed" badge instead of a fixed "never
+delivered" note.
 
 **v3 update:** the doclist now lists whichever Lender items were actually
 selected for the request (via Step 2b), not a fixed 5-item list -- Loan
 Admin items never appear (see 2b.9). Copy also changed to "...for this
 cycle" per the v3 mockup.
 
+**Architecture note, not fixed in this pass:** delivery happens
+*synchronously* inside the request/response cycle (no background task
+queue exists in this project) -- a slow or blocked SMTP hand-off delays the
+HTTP response by up to `MAIL_TIMEOUT_SECONDS`. StackPulse avoids this with
+Spring's `@Async`. Worth a Celery/RQ/thread-pool follow-up if real-world
+send latency becomes noticeable; not built here to avoid introducing new
+infrastructure this project doesn't otherwise have.
+
 | ID | Case | Given | When | Then | Status |
 |----|------|-------|------|------|--------|
-| 3.1 | Email sends from a verified/authenticated domain | — | — | **N/A until a real provider is chosen** -- SPF/DKIM/DMARC don't apply to a logged-only email | 🔲 Planned (blocked on provider decision) |
-| 3.2 | Checklist in the email matches the request | — | Send a request | Body contains every item in `DEFAULT_CHECKLIST`, count matches "Required documents · N" | ✅ `test_logged_email_body_includes_every_checklist_item` |
-| 3.2b | Checklist is currently fixed, not per-request | — | — | Same 5 items on every request -- Step 2's form has no checklist picker yet, so this is honestly a known simplification, not a bug | 🔲 Planned (make configurable once Step 2 grows a picker) |
+| 3.1 | Email sends from a verified/authenticated domain | — | — | **N/A** -- `freedombankva.com` has no real SPF/DKIM/DMARC records to authenticate against; the send *mechanism* is real, the domain's sending reputation isn't | 🔲 Deferred (needs a real owned domain, not a code gap) |
+| 3.2 | Checklist in the email matches the request | — | Send a request | Body contains every selected Lender item, count matches "Required documents · N" | ✅ `test_logged_email_body_includes_every_checklist_item` |
 | 3.3 | Body includes borrower + company name | — | Send a request | Both strings present verbatim in `body_text` | ✅ `test_logged_email_body_includes_borrower_and_company_name` |
-| 3.3b | Upload link is single-purpose | — | Send a request | Body's upload URL embeds this request's unique `link_token` | ✅ `test_logged_email_body_includes_the_upload_link_token` — note: the URL doesn't resolve to anything yet, Step 4 isn't built |
-| 3.4 | Link expiry enforced | — | — | Depends on Step 4 (the actual upload portal) to enforce; the email's stated expiry date is correct (2.6/2.17 already assert `linkExpiresAt`), but nothing server-side rejects a used-past-expiry link yet since there's no portal to reject at | 🔲 Planned (Step 4 dependency) |
+| 3.3b | Upload link is single-purpose | — | Send a request | Body's upload URL embeds this request's unique `link_token` | ✅ `test_logged_email_body_includes_the_upload_link_token` — also verified live, real base64-decoded body |
 | 3.5 | Expiry shown matches send date + 7 days | — | Send a request | `RequestEmail.body_text` expiry line matches `DocumentRequest.link_expires_at` exactly | ✅ `test_logged_email_expiry_date_matches_link_expires_at` |
 | 3.6 | Anti-phishing footer present | — | Send a request | Body contains "Freedom Bank will never ask for your password or one-time codes by email" | ✅ `test_logged_email_includes_anti_phishing_footer` |
-| 3.7 | No-reply / bounce handling | — | — | **N/A until a real provider is chosen** (see scope decision above) | 🔲 Planned (blocked on provider decision) |
+| 3.7 | No-reply / bounce handling | — | — | **N/A** -- direct-to-MX sending has no bounce webhook to receive (that's a provider-specific feature) | 🔲 Deferred (architectural, not a code gap) |
 | 3.8 | Resend logs a fresh email with the new token | — | Send, then resend | A second `RequestEmail` row exists, its body contains the *new* `link_token`, not the old one | ✅ `test_resend_logs_a_second_email` + `test_get_latest_email_returns_the_most_recent_one` |
 | 3.9 | Sending always logs exactly one email | — | POST `action=send` | `RequestEmail.objects.count() == 1` | ✅ `test_sending_a_request_logs_exactly_one_email` |
 | 3.10 | Draft never logs an email | — | POST `action=draft` | `RequestEmail.objects.count() == 0` | ✅ `test_draft_does_not_log_an_email` |
-| 3.11 | Email addressed to the applicant | — | Send a request | `to_email` == the form's email field, `from_email` == `requests@freedombankva.com` | ✅ `test_logged_email_goes_to_the_applicants_address` |
+| 3.11 | Email addressed to the applicant | — | Send a request | `to_email` == the form's email field, `from_email` == `settings.MAIL_FROM_ADDRESS` | ✅ `test_logged_email_goes_to_the_applicants_address` |
 | 3.12 | Subject matches mockup copy exactly | — | Send a request | `"Documents needed to begin your loan application"` | ✅ `test_logged_email_subject_matches_mockup_copy` |
 | 3.13 | `GET /api/requests/<id>/email` returns the latest | Sent + resent once | GET the email endpoint | Body reflects the *second* (latest) email's token, not the first | ✅ `test_get_latest_email_returns_the_most_recent_one` |
 | 3.14 | 404 when nothing logged yet | Draft with no send | GET the email endpoint | 404 | ✅ `test_get_email_404s_when_none_logged_yet` |
 | 3.15 | Email endpoint requires auth | Not logged in | GET the email endpoint | 403 | ✅ `test_get_email_requires_authentication` |
 | 3.16 | `RequestEmail` is read-only in admin | — | Inspect `RequestEmailAdmin` | No add/change permission — same append-only pattern as `LoginEvent` | ✅ `test_request_email_is_read_only_via_admin` |
-| 3.17 | Console log line appears on send | — | Send a request, check gunicorn output | INFO line: `Secure request email logged (not actually sent...)` with request id, recipient, subject | ✅ verified manually this session (required adding a `LOGGING` config to `settings.py` — Django doesn't wire app-logger output to console by default) |
-| 3.18 | "View email" modal renders the logged content | Frontend | Click "View email" on a sent/expired/uploads_complete row | Modal shows From/To/Subject + the full body, with a note that it wasn't actually delivered | 🟡 |
+| 3.17 | Console log line appears on send | — | Send a request, check gunicorn output | INFO line: `Email delivered/delivery failed/delivery skipped: request_id=... kind=... to=...` | ✅ verified manually this session |
+| 3.18 | "View email" modal renders delivery status | Frontend | Click "View email" on a sent row | Modal shows a real "✓ Delivered"/"✕ Delivery failed" badge plus From/To/Subject/body | 🟡 (backend verified live via curl + a real local SMTP listener; modal itself not independently automated) |
 | 3.19 | "View email" absent on drafts | Frontend | Draft row in Recent requests | No "View email" button (nothing has been logged yet) | 🟡 |
+| 3.20 | Delivery disabled (`MAIL_ENABLED=false`) skips cleanly | — | Send a request | `delivery_attempted=False`, `delivered=False`, `RequestEmail` row still created | ✅ `test_disabled_returns_not_attempted_without_calling_smtp`, `test_disabled_by_default_in_tests_records_neither_attempted_nor_delivered` |
+| 3.21 | Recipient domain not in the allowlist is blocked | — | Send to a non-allowlisted domain | No SMTP connection attempted, `delivered=False` | ✅ `test_domain_not_allowed_returns_not_attempted` |
+| 3.22 | Real SMTP protocol sequence (EHLO → STARTTLS → sendmail) | Domain allowlisted, `MAIL_TEST_SERVER` set | `send_direct_email(...)` | Real call sequence against the connection, correct recipient list passed to `sendmail` | ✅ `test_allowed_domain_sends_via_real_smtp_protocol_calls` — also verified live against a real (non-mocked) local `smtpd.DebuggingServer` |
+| 3.23 | A real SMTP-level failure is caught, not raised | Connection/protocol error | `send_direct_email(...)` | Returns `(attempted=True, delivered=False)`, never raises | ✅ `test_smtp_failure_returns_attempted_not_delivered_and_does_not_raise`, `test_failed_delivery_still_creates_the_audit_row` |
+| 3.24 | Real MX lookup, cached, with a DNS-failure fallback | Real/fake domain | `_resolve_mx(domain)` | Real `dns.resolver.resolve` call, cached on repeat; falls back to the domain itself if DNS fails (RFC 5321), never raises | ✅ `test_mx_resolution_uses_dns_and_caches`, `test_mx_resolution_falls_back_to_domain_on_dns_failure` — also verified live against `gmail.com`'s real MX records |
 
 ---
 

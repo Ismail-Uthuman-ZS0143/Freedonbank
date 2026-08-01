@@ -1,21 +1,50 @@
-"""Compose and log emails: the Step 3 secure request email, the Step 4
-fraud/session-guard alert, the Step 5 completion confirmation, and the
-Step 6 batched review-flags re-request -- all reuse the same RequestEmail
-log table.
+"""Compose, log, and deliver emails: the Step 3 secure request email, the
+Step 4 fraud/session-guard alert, the Step 5 completion confirmation, and
+the Step 6 batched review-flags re-request -- all reuse the same
+RequestEmail log table and the same real delivery path.
 
-No real mail provider is wired up (SMTP/SendGrid/etc.) -- per direction,
-this logs the exact content instead of faking delivery, the same "honest
-placeholder" pattern used for SSO/MFA in Step 1.
+Every email is composed and persisted as an append-only RequestEmail row
+regardless of delivery outcome (so it's always inspectable via the admin or
+the API), and real delivery is then attempted through
+document_requests/mail_delivery.py -- direct-to-MX, no SMTP relay/provider
+account, mirroring the pattern already used in the sibling StackPulse
+project. Delivery never raises; `RequestEmail.delivery_attempted`/
+`delivered` record what actually happened.
 """
 import logging
 
 from django.conf import settings
 
+from .mail_delivery import send_direct_email
 from .models import RequestEmail
 
 logger = logging.getLogger(__name__)
 
-FROM_EMAIL = 'requests@freedombankva.com'
+FROM_EMAIL = settings.MAIL_FROM_ADDRESS
+
+
+def _log_and_deliver(*, document_request, kind, to_email, from_email, subject, body_text):
+    """Creates the audit row, then attempts real delivery and updates it
+    with the outcome. Always returns the RequestEmail row -- delivery
+    failure never prevents the audit trail or the caller's flow."""
+    email = RequestEmail.objects.create(
+        document_request=document_request, kind=kind,
+        to_email=to_email, from_email=from_email,
+        subject=subject, body_text=body_text,
+    )
+
+    attempted, delivered = send_direct_email(to_email, subject, body_text)
+    email.delivery_attempted = attempted
+    email.delivered = delivered
+    email.save(update_fields=['delivery_attempted', 'delivered'])
+
+    logger.info(
+        'Email %s: request_id=%s kind=%s to=%s subject=%r',
+        'delivered' if delivered else ('delivery failed' if attempted else 'delivery skipped'),
+        document_request.id, kind, to_email, subject,
+    )
+
+    return email
 
 
 def _compose_body(doc_request):
@@ -45,32 +74,20 @@ def _compose_body(doc_request):
 
 
 def send_secure_request_email(doc_request):
-    """'Sends' (composes + logs) the Step 3 email for a just-sent or
-    just-resent DocumentRequest. Returns the created RequestEmail row."""
+    """Composes, logs, and attempts real delivery of the Step 3 email for a
+    just-sent or just-resent DocumentRequest. Returns the RequestEmail row."""
     subject = 'Documents needed to begin your loan application'
     body = _compose_body(doc_request)
-
-    email = RequestEmail.objects.create(
-        document_request=doc_request,
-        kind='request',
-        to_email=doc_request.email,
-        from_email=FROM_EMAIL,
-        subject=subject,
-        body_text=body,
+    return _log_and_deliver(
+        document_request=doc_request, kind='request',
+        to_email=doc_request.email, from_email=FROM_EMAIL,
+        subject=subject, body_text=body,
     )
-
-    logger.info(
-        'Secure request email logged (not actually sent -- no mail provider configured): '
-        'request_id=%s to=%s subject=%r', doc_request.id, doc_request.email, subject,
-    )
-
-    return email
 
 
 def log_fraud_alert_email(doc_request, reason):
-    """Step 4's 'your relationship manager has been notified' -- reuses the
-    same log-only mechanism as the request email, addressed to the banker
-    who created the request instead of the customer."""
+    """Step 4's 'your relationship manager has been notified' -- addressed
+    to the banker who created the request instead of the customer."""
     banker_email = doc_request.created_by.email if doc_request.created_by_id else 'unknown-banker@freedombankva.com'
     subject = f'Session ended — unusual activity detected · request #{doc_request.id}'
     body = (
@@ -80,22 +97,11 @@ def log_fraud_alert_email(doc_request, reason):
         f'Documents already uploaded before this point remain safely in the parking bay -- nothing '
         f'was lost. Contact the customer directly to continue securely if appropriate.'
     )
-
-    email = RequestEmail.objects.create(
-        document_request=doc_request,
-        kind='fraud_alert',
-        to_email=banker_email,
-        from_email='alerts@freedombankva.com',
-        subject=subject,
-        body_text=body,
+    return _log_and_deliver(
+        document_request=doc_request, kind='fraud_alert',
+        to_email=banker_email, from_email='alerts@freedombankva.com',
+        subject=subject, body_text=body,
     )
-
-    logger.warning(
-        'Fraud/session-guard alert logged (not actually sent -- no mail provider configured): '
-        'request_id=%s reason=%r', doc_request.id, reason,
-    )
-
-    return email
 
 
 def log_completion_confirmation_email(doc_request):
@@ -113,22 +119,11 @@ def log_completion_confirmation_email(doc_request):
         f'Commercial Lending Team\n'
         f'Freedom Bank of Virginia · 10555 Main St., Fairfax, VA'
     )
-
-    email = RequestEmail.objects.create(
-        document_request=doc_request,
-        kind='confirmation',
-        to_email=doc_request.email,
-        from_email=FROM_EMAIL,
-        subject=subject,
-        body_text=body,
+    return _log_and_deliver(
+        document_request=doc_request, kind='confirmation',
+        to_email=doc_request.email, from_email=FROM_EMAIL,
+        subject=subject, body_text=body,
     )
-
-    logger.info(
-        'Completion confirmation email logged (not actually sent -- no mail provider configured): '
-        'request_id=%s reference=%s to=%s', doc_request.id, doc_request.reference_number, doc_request.email,
-    )
-
-    return email
 
 
 def log_review_flags_email(doc_request, flagged_items):
@@ -151,16 +146,8 @@ def log_review_flags_email(doc_request, flagged_items):
         f'Commercial Lending Team\n'
         f'Freedom Bank of Virginia · 10555 Main St., Fairfax, VA'
     )
-
-    email = RequestEmail.objects.create(
+    return _log_and_deliver(
         document_request=doc_request, kind='review_flags',
         to_email=doc_request.email, from_email=FROM_EMAIL,
         subject=subject, body_text=body,
     )
-
-    logger.info(
-        'Review-flags email logged (not actually sent -- no mail provider configured): '
-        'request_id=%s flagged_count=%d', doc_request.id, len(flagged_items),
-    )
-
-    return email

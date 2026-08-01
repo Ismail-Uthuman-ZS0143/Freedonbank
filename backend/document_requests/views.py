@@ -13,6 +13,7 @@ from rest_framework import status
 from .models import (
     DocumentRequest, RequestEmail, ChecklistItem, UploadedFile, UploadSession,
     DocumentTwin, BusinessTwin, ExtractionEvent, ExtractedValue, CONFIDENCE_ROUTING_THRESHOLD,
+    ChecklistPreference,
 )
 from .validation import validate_fields, all_valid
 from . import checklist as checklist_module
@@ -111,14 +112,44 @@ def validate_view(request):
 
 @api_view(['GET'])
 def checklist_template_view(request):
-    """Step 2b's customize picker data -- the full master template grouped
-    by category, with each item's default-selected state and audience."""
+    """The full checklist master template grouped by category, with each
+    item's template-level default-selected state and audience. Used by the
+    Profile settings checklist page; the *banker's own* saved selection
+    (if any) is a separate call -- see checklist_preference_view."""
     grouped = {}
     for category, name, audience, selected in checklist_module.CHECKLIST_TEMPLATE:
         grouped.setdefault(category, []).append({'name': name, 'audience': audience, 'selected': selected})
     return Response({
         'categories': [{'category': c, 'items': grouped[c]} for c in checklist_module.CATEGORIES if c in grouped],
     })
+
+
+@api_view(['GET', 'POST'])
+def checklist_preference_view(request):
+    """Step 2b (v5) -- a banker's own saved default checklist, configured
+    once under Profile settings rather than rebuilt on every request. GET
+    returns the banker's saved selection, falling back to the template's
+    own default selection if they've never saved one (so the settings page
+    has sensible starting checkboxes). POST validates and saves a new
+    selection -- 400s on an unknown item, same as sending a request."""
+    if request.method == 'GET':
+        pref = ChecklistPreference.objects.filter(banker=request.user).first()
+        if pref:
+            return Response({'selectedItems': pref.selected_items, 'isSaved': True})
+        selected_items = [{'category': c, 'name': n} for c, n, _ in checklist_module.default_selection()]
+        return Response({'selectedItems': selected_items, 'isSaved': False})
+
+    resolved, error = _resolve_selected_items(request.data.get('selectedItems'))
+    if error:
+        return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
+    if not resolved:
+        return Response({'error': 'At least one checklist item must be selected.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    selected_items = [{'category': c, 'name': n} for c, n, _ in resolved]
+    pref, _ = ChecklistPreference.objects.update_or_create(
+        banker=request.user, defaults={'selected_items': selected_items},
+    )
+    return Response({'selectedItems': pref.selected_items, 'isSaved': True})
 
 
 @api_view(['GET'])
@@ -274,11 +305,18 @@ def list_create_view(request):
     if not all_valid(results):
         return Response({'error': 'All fields must be valid before sending.', 'fields': results}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Step 2b's customize picker -- optional; falls back to the template's
-    # own default selection if the caller doesn't send one.
+    # Step 2b (v5): the checklist is configured once under Profile settings,
+    # not rebuilt per request -- `selectedItems` is only for explicit
+    # overrides (tests, scripted sends). Normal sends omit it entirely and
+    # fall back to the banker's saved ChecklistPreference; a banker who's
+    # never saved one falls back to the template's own default selection.
     selected_items, selection_error = _resolve_selected_items(data.get('selectedItems'))
     if selection_error:
         return Response({'error': selection_error}, status=status.HTTP_400_BAD_REQUEST)
+    if selected_items is None:
+        pref = ChecklistPreference.objects.filter(banker=request.user).first()
+        if pref:
+            selected_items, _pref_error = _resolve_selected_items(pref.selected_items)
 
     now = timezone.now()
     doc_request = DocumentRequest.objects.create(
@@ -321,9 +359,9 @@ def resend_view(request, request_id):
 
 @api_view(['GET'])
 def latest_email_view(request, request_id):
-    """The most recently logged email for this request (Step 3 request
-    email, or a Step 4 fraud alert) -- lets a banker inspect exactly what
-    would have been sent, since no real mail provider is wired up yet."""
+    """The most recently logged email for this request -- lets a banker
+    inspect exactly what was sent and whether real delivery (direct-to-MX,
+    see mail_delivery.py) actually succeeded."""
     email = RequestEmail.objects.filter(document_request_id=request_id).order_by('-sent_at').first()
     if not email:
         return Response({'error': 'No email has been logged for this request yet.'}, status=status.HTTP_404_NOT_FOUND)
@@ -335,6 +373,8 @@ def latest_email_view(request, request_id):
         'subject': email.subject,
         'bodyText': email.body_text,
         'sentAt': email.sent_at.isoformat(),
+        'deliveryAttempted': email.delivery_attempted,
+        'delivered': email.delivered,
     })
 
 

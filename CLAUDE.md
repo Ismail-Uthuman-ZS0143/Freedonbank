@@ -149,6 +149,63 @@ since those steps haven't been touched since v3 arrived -- reconcile the
 numbering the next time Step 7+ is revisited, rather than assuming it still
 lines up.
 
+## Step 2b correction — checklist config is a profile setting, not a per-request modal (v5)
+**A real miss, caught by the user, not by review.** The v3 rebuild above
+built a per-request "Customize & Send" modal (`CustomizeModal`) that
+appeared after field validation on every single send. When v5 arrived, the
+diff-based check that reviewed Step 2 compared byte ranges within the
+section and concluded (wrongly) that the modal's content was just extended
+with new dashboard widgets -- it never registered that the modal's own
+*heading and button copy* had changed: "Checklist configuration — under
+profile settings" / "Save configuration" (v5) vs. "Customize & Send Secure
+Upload Link" / "Generate Secure Link" (v3). The real change: v5 moved
+checklist configuration to a **one-time profile setting**
+(`workspace.freedombankva.com/settings/checklist`, opened from the avatar
+menu), and "Send secure request" on the dashboard went back to being a
+single click that just uses whatever's saved there. Lesson: a byte-range
+diff catches *added* content reliably but can silently miss a *renamed/
+recontextualized* section with mostly-similar body content -- worth
+spot-checking headings and button copy specifically when a diff comes back
+looking like "same thing plus more," not just skimming the added lines.
+
+Fixed:
+- New `ChecklistPreference` model (migration `0009`) -- one saved selection
+  per banker (`OneToOneField` to `User`), `selected_items` stored as JSON.
+  Audience is always re-resolved from `CHECKLIST_TEMPLATE` both at save time
+  and at send time -- never trusted from what's stored, same principle as
+  the original per-request `selectedItems` validation.
+- New `GET/POST /api/requests/checklist-preference` -- GET falls back to the
+  template's own default selection (with `isSaved: false`) when the banker
+  has never saved one, so the settings page always has sensible starting
+  checkboxes. POST validates (400 on an unknown item or an empty selection)
+  and upserts (`update_or_create`, so re-saving overwrites rather than
+  accumulating rows).
+- `list_create_view`'s send branch now resolves the checklist in priority
+  order: explicit `selectedItems` in the request body (kept -- tests and
+  any future scripted/API sends can still override) → the banker's saved
+  `ChecklistPreference` → the template's own default. A plain "Send secure
+  request" click sends **no** `selectedItems` at all now, so it always
+  falls through to the banker's saved preference.
+- `CustomizeModal` deleted from `app/dashboard/page.tsx` entirely --
+  "Send secure request" is a single click again, same as before Step 2b
+  existed. New `app/settings/checklist/page.tsx` carries the same
+  categorized-checkbox UI the modal had, now as a real page with a "Save
+  configuration" button. Dashboard topbar gained a plain "Checklist
+  settings" link (the mockup says "opened from the avatar menu," but this
+  project doesn't have a full avatar dropdown yet, so a direct link stood
+  in rather than building a menu component for one link) and the factions
+  note now reads "...document list comes from your configured checklist"
+  with a link into settings.
+
+1 new model, 2 new endpoints, 8 more tests (`ChecklistPreferenceTests` +
+one new case in `ChecklistSelectionAtSendTests`), 181 total across the
+whole backend. Verified live end-to-end: saved a real 2-item preference,
+then sent with a completely bare request body (no `selectedItems` key at
+all) and confirmed the created `ChecklistItem` rows matched the saved
+preference exactly, not the template default. Cleaned up the test DB row
+and the one `ChecklistPreference` row created during verification
+afterward.
+
 ## Step 2c — Workspace nav & customer activity — done (partial, v5)
 `FBOV_Document_Request_Flow_Mock_v5.html` arrived and grew Step 2
 substantially: a workspace nav tab bar, a document-estate search bar, a
@@ -259,6 +316,81 @@ the gunicorn console, not silently swallowed.
 **Known simplification, resolved by Step 2b:** this originally noted every
 request got the same fixed 5-item checklist since Step 2 had no picker UI --
 Step 2b (above) added the real customize picker, so this is no longer a gap.
+
+## Step 3 upgrade — real direct-to-MX email delivery (no provider, no credentials)
+Asked which SMTP provider to wire up; the user pointed at the sibling
+**StackPulse** project's own email implementation as the pattern to follow
+instead of a third-party provider. Read StackPulse's
+`EmailService`/`DirectMailSender`/`MxResolver`/`DomainWhitelistService`
+(Java/Spring) and ported the same architecture to Python: **direct-to-MX
+delivery** -- resolve the recipient domain's real MX record via DNS, then
+connect straight to that mail server and hand the message off with
+opportunistic STARTTLS. No SMTP relay, no provider account, no API key or
+password anywhere in this codebase -- which also sidestepped the earlier
+"where do the credentials go" question entirely, since there are none.
+
+What got built:
+- `document_requests/mail_delivery.py` -- `_resolve_mx()` (real DNS MX
+  lookup via `dnspython`, cached, falls back to the domain itself per
+  RFC 5321 if the lookup fails), `_is_domain_allowed()` (fails closed --
+  `MAIL_ALLOWED_DOMAINS` empty by default blocks everything, same as
+  StackPulse's `DomainWhitelistService`), `send_direct_email()` (real
+  `smtplib` SMTP session: EHLO, STARTTLS if offered, `sendmail`). Returns
+  `(attempted, delivered)` so "never even tried" is distinguishable from
+  "tried and failed" -- never raises.
+- `RequestEmail` gained `delivery_attempted`/`delivered` (migration
+  `0010`). `email_service.py` was rewritten around one shared
+  `_log_and_deliver()` helper -- the audit row is always created first,
+  *then* real delivery is attempted and the row updated with the outcome,
+  so a delivery failure never loses the audit trail.
+- 8 new settings (`MAIL_ENABLED`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`,
+  `MAIL_ALLOWED_DOMAINS`, `MAIL_SMTP_PORT`, `MAIL_TEST_SERVER`,
+  `MAIL_TIMEOUT_SECONDS`, `MAIL_DNS_TIMEOUT_SECONDS`) in `.env`/
+  `config/settings.py`. `MAIL_TEST_SERVER` is StackPulse's own escape
+  hatch, ported as-is: set to `host:port` and every outbound email routes
+  there instead of doing real MX resolution.
+- `EmailPreviewModal` in `app/dashboard/page.tsx` now shows a real
+  "✓ Delivered" / "✕ Delivery failed" badge instead of a fixed "never
+  delivered" note.
+
+**Honestly still not solved, and can't be by code alone:** `freedombankva.com`
+is a fictional domain with no real SPF/DKIM/DMARC DNS records, so even a
+protocol-correct direct-to-MX send would likely be spam-flagged or rejected
+by a real major mail provider (Gmail, Outlook, etc.) -- sending
+*reputation* isn't something code can fix, only owning a real domain with
+real DNS records can. This is the same tradeoff StackPulse itself accepted.
+Bounce handling is also out of scope for the same structural reason --
+direct-to-MX has no webhook to receive bounces on, unlike SendGrid/SES/etc.
+
+**Gotcha discovered this session:** outbound port 25 is blocked in this dev
+sandbox (confirmed with a direct raw-socket connection test -- times out).
+Real delivery to the actual internet can't be verified from here. Verified
+instead, for real: (a) DNS MX resolution against `gmail.com` returned real
+records, (b) a real (non-mocked) local `python3 -m smtpd -c DebuggingServer`
+instance, reached via `MAIL_TEST_SERVER`, received a complete correctly-
+formed message through the real app (login → send → real SMTP transaction)
+with the real checklist content and real upload link intact in the
+base64-decoded body -- proof the full code path works, even though true
+internet-facing delivery needs a host where port 25 egress is open.
+
+**Architecture note, not fixed in this pass:** delivery is currently
+*synchronous* inside the Django request/response cycle -- no task queue
+(Celery/RQ) exists in this project, unlike StackPulse's Spring `@Async`. A
+slow or blocked SMTP hand-off delays the HTTP response by up to
+`MAIL_TIMEOUT_SECONDS` (10s default). Worth revisiting with a background
+worker if real-world latency becomes noticeable; not built now to avoid
+introducing infrastructure this project doesn't otherwise have.
+
+13 new tests (`MailDeliveryTests` with `smtplib.SMTP` mocked so the
+automated suite never touches the real network, plus
+`EmailDeliveryIntegrationTests`), 190 total across the whole backend. A
+module-level `override_settings(MAIL_ENABLED=False)` in `tests.py`
+guarantees the rest of the suite can never attempt a real send regardless
+of what `.env` happens to contain. Cleaned up: killed the local debug SMTP
+listener, reverted `.env`'s `MAIL_TEST_SERVER` back to empty (real-MX mode)
+and `MAIL_ALLOWED_DOMAINS` to `intics.ai` (per direct instruction) once
+verification was done, and deleted the two test `DocumentRequest` rows
+created during live verification.
 
 ## Step 4 — Customer upload portal — done
 `document_requests` gained `ChecklistItem` (one row per selected checklist

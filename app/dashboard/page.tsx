@@ -34,6 +34,7 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 
 interface EmailPreview {
   toEmail: string; fromEmail: string; subject: string; bodyText: string; sentAt: string;
+  deliveryAttempted: boolean; delivered: boolean;
 }
 
 function EmailPreviewModal({ requestId, onClose }: { requestId: number; onClose: () => void }) {
@@ -59,7 +60,7 @@ function EmailPreviewModal({ requestId, onClose }: { requestId: number; onClose:
       <div style={{ background: "white", borderRadius: 16, width: "100%", maxWidth: 640, maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 24px 60px -30px rgba(16,28,66,.35)" }}
         onClick={e => e.stopPropagation()}>
         <div style={{ padding: "16px 22px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", background: "var(--ice)" }}>
-          <b style={{ fontFamily: "var(--display)", color: "var(--navy)" }}>Logged secure request email</b>
+          <b style={{ fontFamily: "var(--display)", color: "var(--navy)" }}>Secure request email</b>
           <button className="btn ghost" style={{ marginLeft: "auto", padding: "5px 10px" }} onClick={onClose}>Close</button>
         </div>
         <div style={{ padding: 22, overflowY: "auto" }}>
@@ -67,6 +68,11 @@ function EmailPreviewModal({ requestId, onClose }: { requestId: number; onClose:
           {!error && !email && <p style={{ color: "var(--muted)" }}>Loading…</p>}
           {email && (
             <>
+              {email.deliveryAttempted && (
+                <span className={email.delivered ? "badge ok" : "badge bad"} style={{ marginBottom: 12, display: "inline-block" }}>
+                  {email.delivered ? "✓ Delivered" : "✕ Delivery failed"}
+                </span>
+              )}
               <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 4 }}><b>From:</b> {email.fromEmail}</p>
               <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 4 }}><b>To:</b> {email.toEmail}</p>
               <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}><b>Subject:</b> {email.subject}</p>
@@ -74,7 +80,9 @@ function EmailPreviewModal({ requestId, onClose }: { requestId: number; onClose:
                 {email.bodyText}
               </pre>
               <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 12 }}>
-                Logged {new Date(email.sentAt).toLocaleString()} — no real mail provider is configured yet, so this was never actually delivered.
+                {email.delivered
+                  ? `Delivered ${new Date(email.sentAt).toLocaleString()} via direct-to-MX SMTP (no relay/provider).`
+                  : `Logged ${new Date(email.sentAt).toLocaleString()} — real delivery was attempted and failed (or is disabled/blocked by the domain allowlist); see the backend log for the reason.`}
               </p>
             </>
           )}
@@ -129,93 +137,6 @@ function FilesModal({ requestId, onClose }: { requestId: number; onClose: () => 
   );
 }
 
-interface TemplateItem { name: string; audience: "lender" | "loan_admin"; selected: boolean; }
-interface TemplateCategory { category: string; items: TemplateItem[]; }
-interface ChecklistTemplate { categories: TemplateCategory[]; }
-
-function CustomizeModal({ borrowerName, companyName, onClose, onSend, sending, error }: {
-  borrowerName: string; companyName: string; onClose: () => void;
-  onSend: (selectedItems: { category: string; name: string }[]) => void;
-  sending: boolean; error: string | null;
-}) {
-  const [template, setTemplate] = useState<ChecklistTemplate | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    fetch("/api/requests/checklist-template").then(r => r.json()).then((data: ChecklistTemplate) => {
-      setTemplate(data);
-      const initial = new Set<string>();
-      data.categories.forEach(cat => cat.items.forEach(item => {
-        if (item.selected) initial.add(`${cat.category}::${item.name}`);
-      }));
-      setSelected(initial);
-    });
-  }, []);
-
-  const toggle = (key: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  };
-
-  const allItems = template?.categories.flatMap(c => c.items.map(i => ({ ...i, category: c.category }))) ?? [];
-  const selectedItems = allItems.filter(i => selected.has(`${i.category}::${i.name}`));
-  const lenderCount = selectedItems.filter(i => i.audience === "lender").length;
-  const loanAdminCount = selectedItems.filter(i => i.audience === "loan_admin").length;
-
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(16,28,66,.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: "white", borderRadius: 16, width: "100%", maxWidth: 720, maxHeight: "88vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 24px 60px -30px rgba(16,28,66,.35)" }}>
-        <div style={{ padding: "16px 22px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", background: "var(--ice)" }}>
-          <b style={{ fontFamily: "var(--display)", color: "var(--navy)" }}>Customize &amp; Send Secure Upload Link</b>
-          <button className="btn ghost" style={{ marginLeft: "auto", padding: "5px 10px" }} onClick={onClose} disabled={sending}>Close</button>
-        </div>
-        <div style={{ padding: 20, overflowY: "auto" }}>
-          <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>
-            Select which documents are needed for {companyName || borrowerName}&apos;s cycle. Selected items join
-            the internal checklist either way — but only &quot;Lender&quot; items are ever shown to the customer
-            through the link; &quot;Loan Admin&quot; items stay internal.
-          </p>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-            <span className="badge info">{selectedItems.length} selected</span>
-            <span className="badge ok">{lenderCount} customer-facing · Lender</span>
-            <span className="badge warn">{loanAdminCount} internal · Loan Admin</span>
-          </div>
-          {!template && <p style={{ color: "var(--muted)" }}>Loading…</p>}
-          {template?.categories.map(cat => (
-            <div key={cat.category} style={{ marginBottom: 16 }}>
-              <h6 style={{ fontSize: 12, fontWeight: 600, color: "var(--navy)", marginBottom: 8 }}>{cat.category}</h6>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px" }}>
-                {cat.items.map(item => {
-                  const key = `${cat.category}::${item.name}`;
-                  return (
-                    <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, minWidth: 260 }}>
-                      <input type="checkbox" checked={selected.has(key)} onChange={() => toggle(key)} />
-                      <span>{item.name}</span>
-                      <span className={item.audience === "lender" ? "badge ok" : "badge warn"} style={{ fontSize: 9.5, padding: "2px 6px" }}>
-                        {item.audience === "lender" ? "Lender" : "Loan Admin"}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-          {error && <p className="formnote" style={{ marginTop: 10 }}>{error}</p>}
-        </div>
-        <div style={{ padding: "14px 22px", borderTop: "1px solid var(--line)" }}>
-          <button className="btn navy" style={{ width: "100%" }} disabled={sending || selectedItems.length === 0}
-            onClick={() => onSend(selectedItems.map(i => ({ category: i.category, name: i.name })))}>
-            {sending ? "Generating…" : "🔗 Generate Secure Link"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function initials(fullName: string) {
   const parts = fullName.trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -240,8 +161,6 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [viewingEmailFor, setViewingEmailFor] = useState<number | null>(null);
   const [viewingFilesFor, setViewingFilesFor] = useState<number | null>(null);
-  const [customizing, setCustomizing] = useState(false);
-  const [customizeError, setCustomizeError] = useState<string | null>(null);
   const [attention, setAttention] = useState<AttentionItem[] | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
@@ -305,25 +224,19 @@ export default function DashboardPage() {
     setFormError(null);
     const results = await validateFields();
     if (!allValid(results)) return;
-    setCustomizeError(null);
-    setCustomizing(true);
-  };
 
-  const handleGenerateLink = async (selectedItems: { category: string; name: string }[]) => {
-    setCustomizeError(null);
     setSending(true);
     try {
       const res = await fetch("/api/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ borrowerName, phone, email, companyName, action: "send", selectedItems }),
+        body: JSON.stringify({ borrowerName, phone, email, companyName, action: "send" }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setCustomizeError(data.error || "Could not send the request.");
+        setFormError(data.error || "Could not send the request.");
         return;
       }
-      setCustomizing(false);
       setBorrowerName(""); setPhone(""); setEmail(""); setCompanyName(""); setFieldResults(null);
       await loadRequests();
     } finally {
@@ -387,6 +300,7 @@ export default function DashboardPage() {
         <span className="name">Credit File Server 2.0</span>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
           <span>{me.fullName}</span>
+          <button className="btn ghost" onClick={() => router.push("/settings/checklist")}>Checklist settings</button>
           <button className="btn ghost" onClick={handleSignOut}>Sign out</button>
         </div>
       </div>
@@ -538,22 +452,18 @@ export default function DashboardPage() {
           {formError && <p className="formnote" style={{ marginTop: 16 }}>{formError}</p>}
           <div className="factions">
             <button className="btn primary" onClick={handleSend} disabled={sending}>
-              Customize &amp; send
+              {sending ? "Sending…" : "Send secure request"}
             </button>
             <button className="btn ghost" onClick={handleSaveDraft} disabled={savingDraft}>
               {savingDraft ? "Saving…" : "Save draft"}
             </button>
-            <span className="note">🔒 Sends an encrypted, single-purpose upload link</span>
+            <span className="note">
+              🔒 Emails the customer an encrypted upload link — document list comes from your{" "}
+              <a href="/settings/checklist" style={{ color: "var(--navy)", fontWeight: 600 }}>configured checklist</a>
+            </span>
           </div>
         </div>
 
-        {customizing && (
-          <CustomizeModal
-            borrowerName={borrowerName} companyName={companyName}
-            onClose={() => { if (!sending) setCustomizing(false); }}
-            onSend={handleGenerateLink} sending={sending} error={customizeError}
-          />
-        )}
         {viewingEmailFor !== null && (
           <EmailPreviewModal requestId={viewingEmailFor} onClose={() => setViewingEmailFor(null)} />
         )}
