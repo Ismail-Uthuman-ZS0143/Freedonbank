@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FBOV — Document Request Flow · Credit File Server 2.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=Public+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy-900:#101C42; --navy:#1B2A5E; --navy-700:#2A3C7E; --navy-100:#DCE5F4;
+  --ice:#EEF3FB; --paper:#FAFBFD; --white:#FFFFFF;
+  --gold:#E87722; --gold-deep:#B85B12; --gold-soft:#FBE8D6;
+  --ink:#1E2433; --muted:#5D6A85; --line:#D9E1EF; --line-soft:#E7EDF7;
+  --ok:#1E7A46; --ok-bg:#E9F4EC; --bad:#B23A3A; --bad-bg:#FBECEC;
+  --warn:#8A5A10; --warn-bg:#FBF1DC;
+  --display:"Bricolage Grotesque",sans-serif; --body:"Public Sans",sans-serif; --serif:"Newsreader",serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--body);background:var(--paper);color:var(--ink);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+
+/* ---------- swirl mark ---------- */
+.mark{display:inline-block;vertical-align:middle}
+.mark svg{display:block}
+
+/* ---------- top bar ---------- */
+.topbar{position:sticky;top:0;z-index:50;background:var(--navy);color:#fff;border-bottom:3px solid var(--gold)}
+.topbar .wrap{display:flex;align-items:center;gap:18px;height:62px}
+.brandline{display:flex;align-items:center;gap:12px}
+.brandline .name{font-family:var(--display);font-weight:600;font-size:17px;letter-spacing:.2px}
+.brandline .tag{font-size:11px;color:#B9C6E6;letter-spacing:.4px}
+.stepnav{margin-left:auto;display:flex;gap:4px}
+.stepnav a{display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;font-size:12.5px;color:#C7D2EE;text-decoration:none;transition:background .15s}
+.stepnav a:hover,.stepnav a:focus-visible{background:var(--navy-700);color:#fff;outline:none}
+.stepnav .n{width:18px;height:18px;border-radius:50%;background:var(--navy-700);color:#fff;font-size:10.5px;display:flex;align-items:center;justify-content:center;font-weight:600}
+.stepnav a:hover .n{background:var(--gold)}
+
+/* ---------- hero ---------- */
+.hero{background:var(--navy);color:#fff;padding:64px 0 72px;position:relative;overflow:hidden}
+.hero::after{content:"";position:absolute;right:-160px;top:-160px;width:520px;height:520px;border-radius:50%;
+  border:56px solid var(--navy-700);border-top-color:var(--gold);transform:rotate(-32deg);opacity:.45}
+.hero .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
+.hero h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,4.4vw,46px);line-height:1.08;margin:14px 0 16px;max-width:15ch}
+.hero p{color:#C7D2EE;max-width:56ch;font-size:16px}
+.hero .meta{margin-top:26px;display:flex;flex-wrap:wrap;gap:10px}
+.chip{display:inline-flex;align-items:center;gap:7px;background:var(--navy-700);border:1px solid #3A4D96;color:#DCE5F4;font-size:12px;padding:6px 13px;border-radius:999px}
+.chip b{color:#fff;font-weight:600}
+
+/* ---------- screen sections ---------- */
+.screen{padding:72px 0 26px}
+.screen.alt{background:var(--ice)}
+.shead{display:flex;align-items:baseline;gap:16px;margin-bottom:26px}
+.snum{font-family:var(--display);font-weight:700;font-size:15px;color:var(--gold);background:var(--gold-soft);border-radius:8px;padding:5px 11px;white-space:nowrap}
+.shead h2{font-family:var(--display);font-weight:600;font-size:25px;color:var(--navy)}
+.shead .req{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
+.slede{max-width:70ch;color:var(--muted);margin:-14px 0 28px;font-size:14.5px}
+
+/* ---------- browser frame ---------- */
+.frame{background:var(--white);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px -30px rgba(16,28,66,.25);overflow:hidden;margin-bottom:46px}
+.chrome{display:flex;align-items:center;gap:12px;background:#F2F5FB;border-bottom:1px solid var(--line);padding:10px 16px}
+.dots{display:flex;gap:6px}
+.dots i{width:10px;height:10px;border-radius:50%;background:#CBD5EA;display:block}
+.urlbar{flex:1;display:flex;align-items:center;gap:8px;background:var(--white);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:12.5px;color:var(--muted)}
+.urlbar .lock{color:var(--ok)}
+.badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.info{background:var(--navy-100);color:var(--navy)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.bad{background:var(--bad-bg);color:var(--bad)}
+
+/* ---------- buttons & inputs ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--body);font-weight:600;font-size:13.5px;border-radius:9px;padding:10px 18px;cursor:pointer;border:1px solid transparent;transition:transform .06s,background .15s;white-space:nowrap}
+.btn:active{transform:scale(.985)}
+.btn.primary{background:var(--gold);color:#fff}
+.btn.primary:hover{background:var(--gold-deep)}
+.btn.navy{background:var(--navy);color:#fff}
+.btn.navy:hover{background:var(--navy-700)}
+.btn.ghost{background:var(--white);color:var(--navy);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--navy-100);background:var(--ice)}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:6px;letter-spacing:.02em}
+.field input{width:100%;font-family:var(--body);font-size:14px;color:var(--ink);background:var(--white);border:1.5px solid var(--line);border-radius:9px;padding:10px 13px;transition:border .15s,box-shadow .15s}
+.field input:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px var(--navy-100)}
+.field.ok input{border-color:#7FBF97}
+.field.bad input{border-color:#DE9C9C;background:#FEFAFA}
+.hint{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:6px}
+.hint.ok{color:var(--ok)} .hint.bad{color:var(--bad)}
+.hint svg{flex:none}
+
+/* ---------- 1 · login ---------- */
+.login{display:grid;grid-template-columns:1fr 1fr;min-height:480px}
+.login .side{background:var(--navy);color:#fff;padding:46px 44px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.login .side::after{content:"";position:absolute;left:-130px;bottom:-150px;width:380px;height:380px;border-radius:50%;border:44px solid var(--navy-700);border-right-color:var(--gold);transform:rotate(24deg);opacity:.5}
+.login .side .tagline{font-family:var(--serif);font-style:italic;font-size:21px;line-height:1.4;color:#DCE5F4;margin-top:auto;position:relative;z-index:1;max-width:20ch}
+.login .side .sub{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-top:14px;position:relative;z-index:1}
+.login .form{padding:46px 48px;display:flex;flex-direction:column;justify-content:center;gap:16px}
+.login h3{font-family:var(--display);font-weight:600;font-size:21px;color:var(--navy)}
+.login .lsub{font-size:13px;color:var(--muted);margin:-10px 0 6px}
+.divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px;margin:2px 0}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.mfa{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);justify-content:center}
+
+/* ---------- 2 · dashboard ---------- */
+.dash{padding:30px 34px}
+.dhead{display:flex;align-items:center;gap:14px;margin-bottom:24px}
+.dhead h3{font-family:var(--display);font-weight:600;font-size:20px;color:var(--navy)}
+.dhead .who{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+.metric{background:var(--ice);border-radius:12px;padding:16px 18px;border-top:3px solid var(--navy)}
+.metric.hot{border-top-color:var(--gold)}
+.metric .k{font-size:12.5px;color:var(--muted);font-weight:500}
+.metric .v{font-family:var(--display);font-weight:700;font-size:27px;color:var(--navy);margin-top:3px}
+.metric .v.bad{color:var(--bad)}
+.panel{border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-bottom:20px}
+.panel .phead{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.panel .phead h4{font-family:var(--display);font-weight:600;font-size:16px;color:var(--navy)}
+.panel .phead .note{margin-left:auto;font-size:12px;color:var(--muted)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px}
+.factions{display:flex;align-items:center;gap:12px;margin-top:20px}
+.factions .note{margin-left:auto;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.rrow{display:flex;align-items:center;gap:12px;padding:12px 2px;border-top:1px solid var(--line-soft);font-size:13.5px}
+.rrow .who2{flex:1;min-width:0}
+.rrow .co{color:var(--muted)}
+.rrow .btn{padding:7px 14px;font-size:12.5px}
+
+/* ---------- 3 · email ---------- */
+.mailwrap{background:var(--ice);padding:34px}
+.mail{max-width:620px;margin:0 auto;background:var(--white);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 16px 44px -26px rgba(16,28,66,.28)}
+.mail .mhead{padding:14px 22px;border-bottom:1px solid var(--line-soft);font-size:12.5px;color:var(--muted);display:grid;gap:4px}
+.mail .mhead b{color:var(--ink);font-weight:600}
+.mail .band{background:var(--navy);color:#fff;padding:22px 26px;display:flex;align-items:center;gap:13px;border-bottom:3px solid var(--gold)}
+.mail .band .bn{font-family:var(--display);font-weight:600;font-size:16px}
+.mail .band .bt{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#B9C6E6}
+.mail .mbody{padding:28px 30px;font-size:14px;line-height:1.7}
+.mail .mbody p{margin-bottom:14px}
+.doclist{border:1px solid var(--line);border-radius:11px;margin:6px 0 18px;overflow:hidden}
+.doclist .di{display:flex;align-items:center;gap:10px;padding:10px 15px;font-size:13.5px;border-top:1px solid var(--line-soft)}
+.doclist .di:first-child{border-top:none;background:var(--ice);font-weight:600;color:var(--navy);font-size:12.5px;letter-spacing:.04em}
+.mail .cta{display:block;text-align:center;background:var(--gold);color:#fff;font-weight:600;font-size:14.5px;border-radius:10px;padding:13px;margin:20px 0 8px;text-decoration:none}
+.mail .cta:hover{background:var(--gold-deep)}
+.mail .expiry{text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px}
+.mail .sig{margin-top:18px;padding-top:16px;border-top:1px solid var(--line-soft);font-size:13.5px}
+.mail .mfoot{background:var(--ice);padding:14px 26px;font-size:11px;color:var(--muted);line-height:1.6}
+
+/* ---------- 4 · portal ---------- */
+.portal{padding:28px 34px}
+.phead2{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+.phead2 h3{font-family:var(--display);font-weight:600;font-size:19px;color:var(--navy)}
+.phead2 .sub2{font-size:13px;color:var(--muted)}
+.timer{margin-left:auto;display:flex;align-items:center;gap:11px;background:var(--ice);border:1px solid var(--line);border-radius:999px;padding:7px 15px 7px 8px}
+.timer .t{font-family:var(--display);font-weight:700;font-size:16px;color:var(--navy);font-variant-numeric:tabular-nums}
+.timer .tl{font-size:10.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.bay{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted);background:var(--ice);border-radius:10px;padding:10px 15px;margin:16px 0 20px}
+.check{border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.check .ci{display:grid;grid-template-columns:26px 1fr auto;gap:13px;align-items:center;padding:15px 19px;border-top:1px solid var(--line-soft)}
+.check .ci:first-child{border-top:none}
+.ci .nm{font-weight:600;font-size:14px}
+.ci .ds{font-size:12.5px;color:var(--muted);margin-top:1px}
+.tick{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.tick.done{background:var(--ok-bg);color:var(--ok)}
+.tick.load{background:var(--gold-soft);color:var(--gold-deep)}
+.tick.wait{background:var(--ice);color:var(--muted);border:1.5px dashed var(--line)}
+.bar{height:6px;background:var(--line-soft);border-radius:99px;overflow:hidden;margin-top:8px;max-width:340px}
+.bar i{display:block;height:100%;width:64%;background:var(--gold);border-radius:99px}
+.fraud{display:flex;gap:13px;background:var(--bad-bg);border:1px solid #EBC6C6;border-radius:12px;padding:15px 18px;margin-top:20px}
+.fraud .fi{color:var(--bad);flex:none;margin-top:2px}
+.fraud b{color:var(--bad)}
+.fraud p{font-size:13px;color:#7A3030;margin-top:2px}
+
+/* ---------- 5 · terminal states ---------- */
+.terminal{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:46px}
+.tcard{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:40px 36px;text-align:center;box-shadow:0 18px 48px -30px rgba(16,28,66,.22)}
+.tcard .ico{width:62px;height:62px;border-radius:50%;margin:0 auto 18px;display:flex;align-items:center;justify-content:center}
+.tcard.good .ico{background:var(--ok-bg);color:var(--ok)}
+.tcard.stop .ico{background:var(--bad-bg);color:var(--bad)}
+.tcard h4{font-family:var(--display);font-weight:600;font-size:19px;color:var(--navy);margin-bottom:9px}
+.tcard.stop h4{color:var(--bad)}
+.tcard p{font-size:13.5px;color:var(--muted);max-width:36ch;margin:0 auto 8px}
+.tcard .fine{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px;justify-content:center;margin-top:14px}
+
+/* ---------- footer ---------- */
+.foot{background:var(--navy-900);color:#8FA0CB;padding:34px 0;margin-top:60px;font-size:12.5px}
+.foot .wrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.foot .sp{margin-left:auto}
+
+/* ---------- 6 · parking bay review ---------- */
+.review{display:grid;grid-template-columns:330px 1fr;min-height:540px}
+.flist{border-right:1px solid var(--line);background:#FCFDFF;padding:16px 14px}
+.flist .lt{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:4px 10px 10px}
+.frow{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:10px;cursor:pointer;font-size:13px;border:1px solid transparent}
+.frow:hover{background:var(--ice)}
+.frow.sel{background:var(--white);border-color:var(--navy-100);box-shadow:0 4px 14px -8px rgba(16,28,66,.25)}
+.frow .fic{flex:none;font-size:15px}
+.frow .fn{flex:1;min-width:0}
+.frow .fn b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .fn span{font-size:11.5px;color:var(--muted)}
+.stat{width:9px;height:9px;border-radius:50%;flex:none}
+.stat.ok{background:var(--ok)} .stat.run{background:var(--gold)} .stat.wait{background:#C6D1E6} .stat.bad{background:var(--bad)}
+.pv{padding:22px 26px;display:flex;flex-direction:column;gap:16px}
+.pvhead{display:flex;align-items:center;gap:12px}
+.pvhead h4{font-family:var(--display);font-weight:600;font-size:16px;color:var(--navy)}
+.pvhead .meta2{font-size:12px;color:var(--muted)}
+.pdoc{border:1px solid var(--line);border-radius:12px;background:var(--white);padding:22px 26px;flex:1;min-height:190px}
+.pdoc .ph{font-family:var(--serif);font-size:15px;color:var(--navy);margin-bottom:12px;border-bottom:1px solid var(--line-soft);padding-bottom:8px}
+.skel{height:8px;border-radius:4px;background:var(--line-soft);margin-bottom:9px}
+.skel.w60{width:60%}.skel.w80{width:80%}.skel.w45{width:45%}.skel.w70{width:70%}
+.skelrow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px}
+.skelrow .cell{height:26px;border:1px solid var(--line-soft);border-radius:6px;background:#FCFDFF}
+.decide{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.dcard{border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.dcard.good{border-color:#BFDCC9;background:#FBFEFC}
+.dcard.redo{border-color:#EBD3B8;background:#FFFDFA}
+.dcard h5{font-family:var(--display);font-weight:600;font-size:14px;color:var(--navy);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.dcard p{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+.dcard textarea{width:100%;font-family:var(--body);font-size:13px;color:var(--ink);border:1.5px solid var(--line);border-radius:9px;padding:9px 12px;resize:vertical;min-height:64px;margin-bottom:12px}
+.dcard textarea:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px var(--navy-100)}
+
+/* ---------- 7 · twin extraction ---------- */
+.xwrap{padding:26px 30px}
+.xtop{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+.xtop h4{font-family:var(--display);font-weight:600;font-size:17px;color:var(--navy)}
+.xprog{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}
+.xbar{width:170px;height:7px;background:var(--line-soft);border-radius:99px;overflow:hidden}
+.xbar i{display:block;height:100%;width:78%;background:var(--gold);border-radius:99px}
+.track{border:1px solid var(--line);border-radius:13px;padding:18px 20px;margin-bottom:16px}
+.track .th{display:flex;align-items:center;gap:9px;margin-bottom:16px}
+.track .th h5{font-family:var(--display);font-weight:600;font-size:14px;color:var(--navy)}
+.track .th .badge{margin-left:auto}
+.stages{display:grid;grid-template-columns:repeat(5,1fr);gap:0;position:relative}
+.stage{text-align:center;position:relative;padding:0 6px}
+.stage::before{content:"";position:absolute;top:13px;left:-50%;width:100%;height:2px;background:var(--line)}
+.stage:first-child::before{display:none}
+.stage.done::before{background:var(--ok)}
+.stage.run::before{background:var(--gold)}
+.sdot{width:26px;height:26px;border-radius:50%;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;position:relative;z-index:1;background:var(--white);border:2px solid var(--line);color:var(--muted)}
+.stage.done .sdot{background:var(--ok);border-color:var(--ok);color:#fff}
+.stage.run .sdot{background:var(--gold);border-color:var(--gold);color:#fff}
+.stage .sn{font-size:12px;font-weight:600;color:var(--navy)}
+.stage.wait .sn{color:var(--muted);font-weight:500}
+.stage .sd{font-size:11px;color:var(--muted);margin-top:2px}
+.logbox{background:var(--navy-900);border-radius:12px;padding:16px 20px;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;line-height:1.9;color:#8FA0CB}
+.logbox .lt2{font-family:var(--body);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#5D6FA5;margin-bottom:8px}
+.logbox .ok2{color:#7FD6A4}.logbox .gold2{color:#F0A868}.logbox .dim{color:#5D6FA5}
+
+/* ---------- 8 · extraction review ---------- */
+.xtable{width:100%;border-collapse:collapse;font-size:13px}
+.xtable th{text-align:left;font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line)}
+.xtable td{padding:11px 12px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+.xtable tr.low td{background:var(--warn-bg)}
+.src{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--navy);background:var(--ice);border:1px solid var(--line);border-radius:6px;padding:2px 8px;white-space:nowrap}
+.conf{font-variant-numeric:tabular-nums;font-weight:600}
+.conf.hi{color:var(--ok)}.conf.lo{color:var(--warn)}
+.handoff{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}
+
+/* ---------- 9 · customer activity log ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:20px;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.ldot{width:10px;height:10px;border-radius:50%;display:inline-block;box-sizing:border-box}
+.ldot.bank{background:var(--navy)}
+.ldot.act{background:var(--gold)}
+.ldot.sys{background:var(--ok)}
+.ldot.alert{background:var(--bad)}
+.cust{background:var(--white);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:13px;padding:18px 22px;margin-bottom:16px}
+.cust.run{border-left-color:var(--gold)} .cust.done{border-left-color:var(--ok)}
+.cust.hold{border-left-color:#D9A441} .cust.stop{border-left-color:var(--bad)}
+.chead{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.cav{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;flex:none}
+.cav.a{background:var(--navy);color:#fff} .cav.b{background:var(--gold);color:#fff}
+.cav.c{background:var(--navy-100);color:var(--navy)} .cav.d{background:var(--gold-soft);color:var(--gold-deep)}
+.chead .ci2{flex:1;min-width:0}
+.chead .ci2 b{font-size:14.5px}
+.chead .ci2 span{display:block;font-size:12px;color:var(--muted)}
+.chead .req2{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--muted);background:var(--ice);border:1px solid var(--line);border-radius:6px;padding:3px 9px}
+.trail{display:flex;flex-direction:column;gap:0}
+.tev{display:grid;grid-template-columns:64px 22px 1fr auto;gap:0 10px;align-items:start;font-size:13px;position:relative;padding:5px 0}
+.tev .tt{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);padding-top:3px;text-align:right}
+.tev .td2{position:relative;display:flex;justify-content:center}
+.tev .td2::before{content:"";position:absolute;top:16px;bottom:-10px;width:2px;background:var(--line-soft)}
+.tev:last-child .td2::before{display:none}
+.tev .ldot{margin-top:4px;position:relative;z-index:1;box-shadow:0 0 0 3px var(--white)}
+.tev .tx b{font-weight:600}
+.tev .tx span{color:var(--muted)}
+.tev .tb{justify-self:end}
+
+/* ---------- 8 · twin detail cards ---------- */
+.twinmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:18px;background:#FCFDFF}
+.kv .k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.kv .v{font-size:13.5px;font-weight:600;color:var(--navy);margin-top:3px}
+.kv .v .sub3{display:block;font-size:11.5px;font-weight:500;color:var(--muted)}
+.bt-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-bottom:16px}
+.bt-card{border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.bt-card h6{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.ent{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;font-size:13px;background:var(--white)}
+.ent.prime{border-color:var(--navy-100);background:var(--ice)}
+.ent .edot{width:8px;height:8px;border-radius:50%;background:var(--navy);flex:none}
+.ent b{flex:1}
+.ent .etag{font-size:11px;color:var(--muted)}
+.alloc{display:flex;gap:10px;align-items:flex-start;background:var(--gold-soft);border:1px solid #F0D9C0;border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--gold-deep);margin-top:4px}
+.ind{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.ind .metric .v{font-size:22px}
+.trend{font-size:11.5px;font-weight:600;margin-top:2px}
+.trend.dn{color:var(--bad)} .trend.up{color:var(--ok)} .trend.fl{color:var(--muted)}
+.spark{display:block;margin-top:6px}
+.flagbar{display:flex;gap:12px;align-items:flex-start;background:var(--warn-bg);border:1px solid #EBD9B4;border-radius:12px;padding:13px 16px;margin-bottom:16px}
+.flagbar .fic2{color:var(--warn);flex:none;font-size:17px;margin-top:1px}
+.flagbar b{color:var(--warn)}
+.flagbar p{font-size:12.5px;color:#6B4A10;margin-top:2px}
+.auditline{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+
+@media (max-width:880px){
+  .stepnav{display:none}
+  .login{grid-template-columns:1fr}
+  .metrics{grid-template-columns:1fr 1fr}
+  .fgrid{grid-template-columns:1fr}
+  .terminal{grid-template-columns:1fr}
+  .shead{flex-wrap:wrap}
+  .shead .req{margin-left:0}
+  .review{grid-template-columns:1fr}
+  .flist{border-right:none;border-bottom:1px solid var(--line)}
+  .decide,.handoff{grid-template-columns:1fr}
+  .bt-grid{grid-template-columns:1fr}
+  .ind{grid-template-columns:1fr 1fr}
+  .stages{grid-template-columns:repeat(2,1fr);gap:14px 0}
+  .stage::before{display:none}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<!-- ======================= TOP BAR ======================= -->
+<nav class="topbar" aria-label="Flow steps">
+  <div class="wrap">
+    <div class="brandline">
+      <span class="mark" aria-hidden="true">
+        <svg width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#3A4D96" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 0 1 29.5 17" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+      </span>
+      <div>
+        <div class="name">Freedom Bank</div>
+        <div class="tag">EXPERIENCE INNOVATION · BANK WITH FREEDOM</div>
+      </div>
+    </div>
+    <div class="stepnav">
+      <a href="#s1"><span class="n">1</span>Login</a>
+      <a href="#s2"><span class="n">2</span>Request</a>
+      <a href="#s3"><span class="n">3</span>Email</a>
+      <a href="#s4"><span class="n">4</span>Upload</a>
+      <a href="#s5"><span class="n">5</span>Confirm</a>
+      <a href="#s6"><span class="n">6</span>Review</a>
+      <a href="#s7"><span class="n">7</span>Extract</a>
+      <a href="#s8"><span class="n">8</span>Verify</a>
+      <a href="#s9"><span class="n">9</span>Log</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ======================= HERO ======================= -->
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Credit File Server 2.0 · UI concept</div>
+    <h1>The document request flow</h1>
+    <p>From a banker creating a verified applicant request, through the customer's secure upload, to parking-bay review, twin extraction, and the loan-officer handoff — eight screens, one uninterrupted chain, no email attachments anywhere.</p>
+    <div class="meta">
+      <span class="chip"><b>Intake</b> 1 Login · 2 Request · 3 Email · 4 Upload · 5 Confirm</span>
+      <span class="chip"><b>Review</b> 6 Parking bay · 7 Twin extraction · 8 Verify &amp; hand off</span>
+    </div>
+  </div>
+</header>
+
+<!-- ======================= 1 · LOGIN ======================= -->
+<section class="screen" id="s1">
+  <div class="wrap">
+    <div class="shead">
+      <span class="snum">Step 1</span>
+      <h2>Banker sign in</h2>
+      <span class="req">MFA enforced · every sign-in audited</span>
+    </div>
+    <p class="slede">Employees authenticate before anything else. Bank SSO is the fast path; either way, multi-factor is required and the session is written to the append-only audit log.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/sign-in</div>
+        <span class="badge info">Internal · employees only</span>
+      </div>
+      <div class="login">
+        <div class="side">
+          <span class="mark" aria-hidden="true">
+            <svg width="46" height="46" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#3A4D96" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 0 1 29.5 17" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+          </span>
+          <div class="tagline">"Every document understood. Every relationship seen whole."</div>
+          <div class="sub">Credit File Server 2.0</div>
+        </div>
+        <div class="form">
+          <h3>Sign in to your workspace</h3>
+          <p class="lsub">Freedom Bank of Virginia · commercial banking</p>
+          <div class="field">
+            <label for="lg-email">Work email</label>
+            <input id="lg-email" type="email" placeholder="d.whitfield@freedombankva.com">
+          </div>
+          <div class="field">
+            <label for="lg-pass">Password</label>
+            <input id="lg-pass" type="password" placeholder="••••••••••">
+          </div>
+          <button class="btn primary" style="width:100%;justify-content:center">Sign in</button>
+          <div class="divider">or</div>
+          <button class="btn ghost" style="width:100%;justify-content:center">Continue with bank SSO</button>
+          <div class="mfa">🛡️ Multi-factor authentication required on every session</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 2 · DASHBOARD ======================= -->
+<section class="screen alt" id="s2">
+  <div class="wrap">
+    <div class="shead">
+      <span class="snum">Step 2</span>
+      <h2>Credit audit dashboard — create &amp; send the request</h2>
+      <span class="req">Details validated before send · resend anytime</span>
+    </div>
+    <p class="slede">The banker captures four applicant details. Each field is verified live — deliverable email, valid phone, registry-matched company — and only then does <b>Send secure request</b> fire the encrypted, single-purpose link. Expired or unanswered requests can be resent in one click.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/requests</div>
+        <span class="badge info">Signed in · D. Whitfield</span>
+      </div>
+      <div class="dash">
+        <div class="dhead">
+          <h3>Credit audit</h3>
+          <div class="who">Commercial banking <span class="avatar">DW</span></div>
+        </div>
+
+        <div class="metrics">
+          <div class="metric"><div class="k">Active requests</div><div class="v">12</div></div>
+          <div class="metric"><div class="k">Docs in parking bay</div><div class="v">8</div></div>
+          <div class="metric"><div class="k">Awaiting customer</div><div class="v">5</div></div>
+          <div class="metric hot"><div class="k">Sessions ended — fraud</div><div class="v bad">1</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="phead">
+            <h4>New document request · applicant details</h4>
+            <span class="note">all fields verified before send</span>
+          </div>
+          <div class="fgrid">
+            <div class="field ok">
+              <label for="f-name">Borrower name</label>
+              <input id="f-name" type="text" value="Priya Sharma">
+              <div class="hint ok"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 4.5l-7 7L3 8"  stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg> Looks good</div>
+            </div>
+            <div class="field bad">
+              <label for="f-phone">Phone</label>
+              <input id="f-phone" type="tel" value="703-55-019">
+              <div class="hint bad"><svg width="13" height="13" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v3.5M8 11h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg> Enter a valid 10-digit phone number</div>
+            </div>
+            <div class="field ok">
+              <label for="f-email">Email</label>
+              <input id="f-email" type="email" value="priya@meridianlogistics.com">
+              <div class="hint ok"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 4.5l-7 7L3 8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg> Deliverable address · domain verified</div>
+            </div>
+            <div class="field ok">
+              <label for="f-co">Company name</label>
+              <input id="f-co" type="text" value="Meridian Logistics LLC">
+              <div class="hint ok"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 4.5l-7 7L3 8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg> Matches state registry</div>
+            </div>
+          </div>
+          <div class="factions">
+            <button class="btn primary">Send secure request</button>
+            <button class="btn ghost">Save draft</button>
+            <span class="note">🔒 Sends an encrypted, single-purpose upload link</span>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:6px">
+          <div class="phead"><h4>Recent requests</h4><span class="note">resend available until uploads complete</span></div>
+          <div class="rrow">
+            <div class="who2"><b>Priya Sharma</b> · <span class="co">Meridian Logistics LLC</span></div>
+            <span class="badge info">Sent · link active</span>
+            <button class="btn ghost">Resend</button>
+          </div>
+          <div class="rrow">
+            <div class="who2"><b>Marcus Lee</b> · <span class="co">Harbor Point Dental PC</span></div>
+            <span class="badge ok">Uploads complete</span>
+            <button class="btn ghost">View docs</button>
+          </div>
+          <div class="rrow">
+            <div class="who2"><b>Elena Ortiz</b> · <span class="co">Blue Ridge Catering Co.</span></div>
+            <span class="badge warn">Link expired · no upload</span>
+            <button class="btn navy">Resend</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 3 · EMAIL ======================= -->
+<section class="screen" id="s3">
+  <div class="wrap">
+    <div class="shead">
+      <span class="snum">Step 3</span>
+      <h2>The secure request email</h2>
+      <span class="req">Formal FBOV template · verified sender</span>
+    </div>
+    <p class="slede">The customer receives a formal Freedom Bank letterhead email — authenticated (SPF / DKIM / DMARC) so it's verifiably from the bank, listing exactly what's needed, with one action: log in and upload.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar">Inbox — Documents needed to begin your loan application</div>
+        <span class="badge ok">Verified sender · DKIM pass</span>
+      </div>
+      <div class="mailwrap">
+        <div class="mail">
+          <div class="mhead">
+            <div><b>From:</b> Freedom Bank of Virginia &lt;requests@freedombankva.com&gt;</div>
+            <div><b>To:</b> priya@meridianlogistics.com</div>
+            <div><b>Subject:</b> Documents needed to begin your loan application</div>
+          </div>
+          <div class="band">
+            <span class="mark" aria-hidden="true">
+              <svg width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#3A4D96" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 0 1 29.5 17" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+            </span>
+            <div>
+              <div class="bn">Freedom Bank of Virginia</div>
+              <div class="bt">Secure document request</div>
+            </div>
+          </div>
+          <div class="mbody">
+            <p>Dear Ms. Sharma,</p>
+            <p>Thank you for choosing Freedom Bank of Virginia for <b>Meridian Logistics LLC</b>. To begin processing your commercial loan application, we need the following documents:</p>
+            <div class="doclist">
+              <div class="di">Required documents · 5</div>
+              <div class="di">📄 Business bank statements — last 6 months</div>
+              <div class="di">📄 Financial statements — FY 2024 and FY 2025</div>
+              <div class="di">📄 Business tax returns — last 2 years</div>
+              <div class="di">📄 Proof of business address</div>
+              <div class="di">📄 Credit history authorization form</div>
+            </div>
+            <p>Upload them through our secure portal. The link below is unique to you, works for this request only, and expires in 7 days.</p>
+            <a class="cta" href="#s4">Log in to upload securely</a>
+            <div class="expiry">Link expires Aug 15, 2026 · single-purpose · encrypted</div>
+            <p style="font-size:12.5px;color:var(--muted)">If you didn't expect this email, contact your relationship manager directly. Freedom Bank will never ask for your password or one-time codes by email.</p>
+            <div class="sig">
+              Warm regards,<br>
+              <b>Commercial Lending Team</b><br>
+              Freedom Bank of Virginia · 10555 Main St., Fairfax, VA
+            </div>
+          </div>
+          <div class="mfoot">This message was sent by the Freedom Bank secure platform. Member FDIC · Equal Housing Lender. Please do not reply to this address; replies are not monitored.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 4 · UPLOAD PORTAL ======================= -->
+<section class="screen alt" id="s4">
+  <div class="wrap">
+    <div class="shead">
+      <span class="snum">Step 4</span>
+      <h2>Customer upload — checklist, parking bay, session guard</h2>
+      <span class="req">Per-document checklist · timed session · fraud watch</span>
+    </div>
+    <p class="slede">After logging in from the email, the customer sees exactly what's expected — one checklist row per document. Files land in a temporary parking bay pending review. The session runs on the swirl timer, and any suspicious activity ends it immediately.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> upload.freedombankva.com/r/7f3a…c91</div>
+        <span class="badge ok">Session encrypted</span>
+      </div>
+      <div class="portal">
+        <div class="phead2">
+          <span class="mark" aria-hidden="true">
+            <svg width="36" height="36" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#DCE5F4" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 0 1 29.5 17" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+          </span>
+          <div>
+            <h3>Document upload — Meridian Logistics LLC</h3>
+            <div class="sub2">Commercial loan application · requested Aug 1 by Freedom Bank</div>
+          </div>
+          <div class="timer" role="timer" aria-label="Session time remaining 14 minutes 32 seconds">
+            <span class="mark" aria-hidden="true">
+              <svg width="30" height="30" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#DCE5F4" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 1 1 5.5 22" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+            </span>
+            <div><div class="t">14:32</div><div class="tl">Session remaining</div></div>
+          </div>
+        </div>
+
+        <div class="bay">📦 <span><b>Temporary parking bay:</b> your files are held securely here until the FBOV team reviews them — nothing is filed to your credit record yet.</span></div>
+
+        <div class="check">
+          <div class="ci">
+            <span class="tick done" aria-hidden="true">✓</span>
+            <div><div class="nm">Business bank statements — last 6 months</div><div class="ds">Meridian-Statements-Feb–Jul.pdf · 4.2 MB · uploaded 2:41 PM</div></div>
+            <span class="badge ok">In parking bay</span>
+          </div>
+          <div class="ci">
+            <span class="tick done" aria-hidden="true">✓</span>
+            <div><div class="nm">Financial statements — FY 2024 &amp; FY 2025</div><div class="ds">Meridian-FY24-25-Financials.xlsx · 1.8 MB · uploaded 2:44 PM</div></div>
+            <span class="badge ok">In parking bay</span>
+          </div>
+          <div class="ci">
+            <span class="tick load" aria-hidden="true">↑</span>
+            <div>
+              <div class="nm">Business tax returns — last 2 years</div>
+              <div class="ds">Meridian-Returns-2024-2025.pdf · 12.6 MB · uploading…</div>
+              <div class="bar"><i></i></div>
+            </div>
+            <span class="badge warn">64%</span>
+          </div>
+          <div class="ci">
+            <span class="tick wait" aria-hidden="true"></span>
+            <div><div class="nm">Proof of business address</div><div class="ds">Utility bill, lease, or registration dated within 90 days</div></div>
+            <button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button>
+          </div>
+          <div class="ci">
+            <span class="tick wait" aria-hidden="true"></span>
+            <div><div class="nm">Credit history authorization form</div><div class="ds">Signed PDF of the form attached to your email</div></div>
+            <button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button>
+          </div>
+        </div>
+
+        <div class="fraud">
+          <span class="fi" aria-hidden="true">⚠️</span>
+          <div>
+            <b>Session guard is active.</b>
+            <p>Unusual activity — automated tooling, location jumps, repeated failed uploads — ends the session immediately and notifies your relationship manager. Your saved uploads are kept.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 5 · TERMINAL STATES ======================= -->
+<section class="screen" id="s5">
+  <div class="wrap">
+    <div class="shead">
+      <span class="snum">Step 5</span>
+      <h2>How the session ends</h2>
+      <span class="req">Platform confirmation email on completion</span>
+    </div>
+    <p class="slede">Two possible endings. Completion thanks the customer and triggers an automatic confirmation email from the platform; a fraud trip ends the session cleanly and alerts the bank — with legitimate uploads preserved.</p>
+    <div class="terminal">
+      <div class="tcard good">
+        <div class="ico" aria-hidden="true" style="font-size:26px">✓</div>
+        <h4>Thanks for uploading</h4>
+        <p>All five documents are in the secure parking bay. The <b>FBOV team will review them and reach out</b> with next steps on your application.</p>
+        <p style="font-size:12.5px">Reference <b>REQ-2026-0847</b></p>
+        <div class="fine">✉️ Confirmation email sent to priya@meridianlogistics.com from the platform</div>
+      </div>
+      <div class="tcard stop">
+        <div class="ico" aria-hidden="true" style="font-size:24px">✕</div>
+        <h4>Session ended — unusual activity detected</h4>
+        <p>For your protection this upload session was closed. Documents already uploaded are safe in the parking bay.</p>
+        <p style="font-size:12.5px">Your relationship manager has been notified and will contact you to continue securely.</p>
+        <div class="fine">🛡️ Event logged · banker alerted · link deactivated</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 6 · PARKING BAY REVIEW ======================= -->
+<section class="screen alt" id="s6">
+  <div class="wrap">
+    <div class="shead">
+      <span class="snum">Step 6</span>
+      <h2>Parking bay review — right document, or re-request</h2>
+      <span class="req">Reviewer decision gates extraction</span>
+    </div>
+    <p class="slede">The banker opens each parked file, adds review comments where needed, and queues good documents for extraction. No emails fire from here — flagged comments are bundled on the review summary below, where one secure email and one extraction kick-start close out the whole request.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/parking-bay/REQ-2026-0847</div>
+        <span class="badge info">Reviewer · D. Whitfield</span>
+      </div>
+      <div class="review">
+        <aside class="flist">
+          <div class="lt">Parking bay · 5 files</div>
+          <div class="frow"><span class="fic">📄</span><div class="fn"><b>Meridian-Statements-Feb–Jul.pdf</b><span>Bank statements · 4.2 MB</span></div><span class="stat ok" title="Approved"></span></div>
+          <div class="frow sel"><span class="fic">📊</span><div class="fn"><b>Meridian-FY24-25-Financials.xlsx</b><span>Financial statements · 1.8 MB</span></div><span class="stat run" title="In review"></span></div>
+          <div class="frow"><span class="fic">📄</span><div class="fn"><b>Meridian-Returns-2024-2025.pdf</b><span>Tax returns · 12.6 MB</span></div><span class="stat wait" title="Pending"></span></div>
+          <div class="frow"><span class="fic">📄</span><div class="fn"><b>Lease-Agreement-2019.pdf</b><span>Address proof · 0.9 MB</span></div><span class="stat bad" title="Re-requested"></span></div>
+          <div class="frow"><span class="fic">📄</span><div class="fn"><b>Credit-Auth-Signed.pdf</b><span>Authorization · 0.3 MB</span></div><span class="stat wait" title="Pending"></span></div>
+        </aside>
+        <div class="pv">
+          <div class="pvhead">
+            <h4>Meridian-FY24-25-Financials.xlsx</h4>
+            <span class="badge warn">In review</span>
+            <span class="meta2" style="margin-left:auto">Checklist item · Financial statements FY 2024 &amp; FY 2025</span>
+          </div>
+          <div class="pdoc" aria-label="Document preview">
+            <div class="ph">Meridian Logistics LLC — Consolidated financial statements, FY 2024–2025</div>
+            <div class="skel w80"></div><div class="skel w60"></div><div class="skel w70"></div><div class="skel w45"></div>
+            <div class="skelrow"><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div></div>
+          </div>
+          <div class="dcard" style="border-color:var(--navy-100)">
+            <h5>Review comments</h5>
+            <p>Optional — add a comment only if something is wrong. Flagged comments are bundled into one secure email from the review summary; nothing is sent from this screen.</p>
+            <textarea placeholder="e.g. Statement covers FY2023 only — we need FY2024 and FY2025."></textarea>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn primary">Submit for extraction</button>
+              <button class="btn ghost">Flag — needs re-upload</button>
+            </div>
+            <p style="font-size:12px;color:var(--muted);margin-top:10px;margin-bottom:0">Decision saved per document — every accepted document goes through twin extraction; flag anything the customer must redo. Batch actions live on the summary.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="shead" style="margin-top:6px">
+      <span class="snum">Step 6b</span>
+      <h2 style="font-size:21px">Review summary — one email, one kick-start</h2>
+      <span class="req">Batch actions appear only here</span>
+    </div>
+    <p class="slede">Every document's review status in one place. When the reviewer is done, the two batch actions unlock: a single secure email carrying all flagged comments, and the extraction kick-start for everything approved.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/parking-bay/REQ-2026-0847/summary</div>
+        <span class="badge info">Review complete · 5 of 5</span>
+      </div>
+      <div class="xwrap">
+        <div class="xtop">
+          <h4>Review summary — Priya Sharma · Meridian Logistics LLC</h4>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <span class="badge ok">4 ready for extraction</span>
+            <span class="badge warn">1 flagged</span>
+          </div>
+        </div>
+        <table class="xtable">
+          <thead><tr><th>Document</th><th>Checklist item</th><th>Reviewer decision</th><th>Comment</th></tr></thead>
+          <tbody>
+            <tr><td><b>Meridian-Statements-Feb–Jul.pdf</b></td><td>Bank statements · 6 months</td><td><span class="badge ok">Ready for extraction</span></td><td style="color:var(--muted)">—</td></tr>
+            <tr><td><b>Meridian-FY24-25-Financials.xlsx</b></td><td>Financial statements FY24–25</td><td><span class="badge ok">Ready for extraction</span></td><td style="color:var(--muted)">—</td></tr>
+            <tr><td><b>Meridian-Returns-2024-2025.pdf</b></td><td>Tax returns · 2 years</td><td><span class="badge ok">Ready for extraction</span></td><td style="color:var(--muted)">—</td></tr>
+            <tr class="low"><td><b>Lease-Agreement-2019.pdf</b></td><td>Proof of business address</td><td><span class="badge warn">Flagged — re-upload</span></td><td style="font-size:12.5px">Lease dated 2019 — need a document from the last 90 days.</td></tr>
+            <tr><td><b>Credit-Auth-Signed.pdf</b></td><td>Credit authorization</td><td><span class="badge ok">Ready for extraction</span></td><td style="color:var(--muted)">Signature verified</td></tr>
+          </tbody>
+        </table>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
+          <button class="btn navy">Send secure email · 1 flagged comment</button>
+          <button class="btn primary">Kick-start extraction · 4 documents</button>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted)">🔒 One email per request · extraction runs in Step 7</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 7 · TWIN EXTRACTION ======================= -->
+<section class="screen" id="s7">
+  <div class="wrap">
+    <div class="shead">
+      <span class="snum">Step 7</span>
+      <h2>Twin extraction — watch it happen</h2>
+      <span class="req">Document twin + business twin · live pipeline</span>
+    </div>
+    <p class="slede">Nothing runs in a black box. The reviewer can open any submitted file and watch both tracks of the background flow — the document twin being built value by value, and the business twin absorbing it into the relationship.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/extraction/REQ-2026-0847</div>
+        <span class="badge warn">Running · live view</span>
+      </div>
+      <div class="xwrap">
+        <div class="xtop">
+          <h4>Meridian-FY24-25-Financials.xlsx</h4>
+          <div class="xprog"><span>Overall</span><div class="xbar"><i></i></div><b style="color:var(--navy)">78%</b></div>
+        </div>
+
+        <div class="track">
+          <div class="th"><h5>Document twin</h5><span class="badge warn">Stage 4 of 5</span></div>
+          <div class="stages">
+            <div class="stage done"><div class="sdot">✓</div><div class="sn">Received</div><div class="sd">from parking bay</div></div>
+            <div class="stage done"><div class="sdot">✓</div><div class="sn">Classified</div><div class="sd">financial stmt · 98%</div></div>
+            <div class="stage done"><div class="sdot">✓</div><div class="sn">Extracted</div><div class="sd">47 fields · 6 tables</div></div>
+            <div class="stage run"><div class="sdot">↻</div><div class="sn">Provenance</div><div class="sd">mapping to pages</div></div>
+            <div class="stage wait"><div class="sdot">5</div><div class="sn">Confidence</div><div class="sd">score &amp; route</div></div>
+          </div>
+        </div>
+
+        <div class="track">
+          <div class="th"><h5>Business twin</h5><span class="badge info">Waiting on document twin</span></div>
+          <div class="stages">
+            <div class="stage done"><div class="sdot">✓</div><div class="sn">Relationship</div><div class="sd">Meridian resolved</div></div>
+            <div class="stage done"><div class="sdot">✓</div><div class="sn">Entities</div><div class="sd">3 linked</div></div>
+            <div class="stage run"><div class="sdot">↻</div><div class="sn">Covenant ledger</div><div class="sd">obligations matching</div></div>
+            <div class="stage wait"><div class="sdot">4</div><div class="sn">Indicators</div><div class="sd">DSCR · cash flow</div></div>
+            <div class="stage wait"><div class="sdot">5</div><div class="sn">Allocation</div><div class="sd">consolidated stmt</div></div>
+          </div>
+        </div>
+
+        <div class="logbox" role="log" aria-label="Extraction event log">
+          <div class="lt2">Live extraction log</div>
+          <div><span class="dim">14:47:02</span>  classify.result        <span class="ok2">financial_statement</span> confidence=0.98</div>
+          <div><span class="dim">14:47:09</span>  extract.table          cash_flow rows=14 → twin</div>
+          <div><span class="dim">14:47:11</span>  extract.value          <span class="gold2">DSCR=1.14x</span> ← sheet "FY25" · row 7</div>
+          <div><span class="dim">14:47:12</span>  provenance.map         41 of 47 values pinned to source</div>
+          <div><span class="dim">14:47:13</span>  businesstwin.covenant  matched obligation Q2-2026 · Summit East</div>
+          <div><span class="dim">14:47:13</span>  audit.write            <span class="ok2">event #88412 appended</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 8 · EXTRACTION REVIEW & HANDOFF ======================= -->
+<section class="screen alt" id="s8">
+  <div class="wrap">
+    <div class="shead">
+      <span class="snum">Step 8</span>
+      <h2>Verify the extraction — hand off or query the customer</h2>
+      <span class="req">HITL review · loan-officer handoff</span>
+    </div>
+    <p class="slede">Extraction done, the reviewer sees every value with its source and confidence. Clean result → submit to the loan officer. A discrepancy → the HITL comment goes back to the customer in a secure email, and the obligation stays open until it's resolved.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/extraction/REQ-2026-0847/review</div>
+        <span class="badge ok">Extraction complete · 47 values</span>
+      </div>
+      <div class="xwrap">
+        <div class="xtop">
+          <h4>Document twin — Meridian-FY24-25-Financials.xlsx</h4>
+          <span class="badge warn" style="margin-left:auto">3 values need review</span>
+        </div>
+        <div class="twinmeta">
+          <div class="kv"><div class="k">Twin id</div><div class="v">DT-0847-002<span class="sub3">audit event #88412</span></div></div>
+          <div class="kv"><div class="k">Classification</div><div class="v">Financial statement<span class="sub3">confidence 98%</span></div></div>
+          <div class="kv"><div class="k">Version</div><div class="v">v2 of 2<span class="sub3">supersedes Jul 28 upload</span></div></div>
+          <div class="kv"><div class="k">Extraction</div><div class="v">47 values · 6 tables<span class="sub3">4 sheets · FY24 &amp; FY25</span></div></div>
+          <div class="kv"><div class="k">Provenance</div><div class="v">47 of 47 pinned<span class="sub3">sheet · row · cell for every value</span></div></div>
+          <div class="kv"><div class="k">Review route</div><div class="v">44 auto · 3 HITL<span class="sub3">maker/checker queue</span></div></div>
+        </div>
+        <table class="xtable">
+          <thead><tr><th>Field</th><th>Value</th><th>Source</th><th>Confidence</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Total revenue FY25</td><td><b>$4,218,400</b></td><td><span class="src">Income stmt · p.2 r.3</span></td><td class="conf hi">99%</td><td><span class="badge ok">Verified</span></td></tr>
+            <tr><td>Net operating income</td><td><b>$611,200</b></td><td><span class="src">Income stmt · p.2 r.18</span></td><td class="conf hi">98%</td><td><span class="badge ok">Verified</span></td></tr>
+            <tr><td>DSCR</td><td><b>1.14x</b></td><td><span class="src">Cash flow · p.4 r.7</span></td><td class="conf hi">97%</td><td><span class="badge ok">Verified</span></td></tr>
+            <tr class="low"><td>Cash-flow total FY25</td><td><b>$538,900</b></td><td><span class="src">Cash flow · p.4 r.14</span></td><td class="conf lo">71%</td><td><span class="badge warn">HITL review</span></td></tr>
+            <tr class="low"><td>Current liabilities</td><td><b>$1,092,760</b></td><td><span class="src">Balance sheet · p.3 r.22</span></td><td class="conf lo">68%</td><td><span class="badge warn">HITL review</span></td></tr>
+            <tr><td>Total assets</td><td><b>$3,884,100</b></td><td><span class="src">Balance sheet · p.3 r.2</span></td><td class="conf hi">99%</td><td><span class="badge ok">Verified</span></td></tr>
+          </tbody>
+        </table>
+
+        <div class="handoff">
+          <div class="dcard good">
+            <h5>✓ Extraction verified</h5>
+            <p>All values confirmed against source. Package the request and move it to underwriting intake.</p>
+            <button class="btn primary">Submit for loan officer review</button>
+          </div>
+          <div class="dcard redo">
+            <h5>⚠ Discrepancy — query the customer</h5>
+            <p>The HITL comment is included verbatim in the secure email; the request stays open until resolved.</p>
+            <textarea>Cash-flow totals on page 4 don't reconcile with the income statement — figures for FY24 and FY25 appear transposed. Please re-check and upload a corrected statement.</textarea>
+            <button class="btn navy">Send secure email with review comments</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="shead" style="margin-top:6px">
+      <span class="snum">Step 8b</span>
+      <h2 style="font-size:21px">Business twin — the relationship, kept current</h2>
+      <span class="req">Structure · covenants · indicators · allocation</span>
+    </div>
+    <p class="slede">The moment the document twin is verified, it updates the business twin: the living model of the whole Meridian relationship. Structure on the left, the covenant ledger on the right, indicator history across the top — and any threshold crossing surfaces here as an advisory flag, never an automatic action.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/business-twin/meridian-logistics</div>
+        <span class="badge ok">Updated 2 min ago · from DT-0847-002</span>
+      </div>
+      <div class="xwrap">
+        <div class="xtop">
+          <h4>Meridian Logistics — relationship twin</h4>
+          <span class="badge info" style="margin-left:auto">3 linked entities · 7 covenants · 3 prior approaches</span>
+        </div>
+
+        <div class="flagbar">
+          <span class="fic2" aria-hidden="true">⚑</span>
+          <div>
+            <b>Advisory flag — DSCR 1.14x crossed the 1.20x floor.</b>
+            <p>Basis: net operating income $611,200 ÷ debt service $536,140, from DT-0847-002 · cash flow sheet, row 7. Routed to D. Whitfield for review — the system takes no action on its own.</p>
+          </div>
+          <button class="btn ghost" style="margin-left:auto;padding:7px 14px;font-size:12.5px">Review basis</button>
+        </div>
+
+        <div class="ind">
+          <div class="metric hot"><div class="k">DSCR</div><div class="v" style="color:var(--bad)">1.14x</div><div class="trend dn">▾ from 1.31x · floor 1.20x</div>
+            <svg class="spark" width="120" height="26" viewBox="0 0 120 26" aria-label="DSCR trend, five periods, declining"><polyline points="4,7 33,9 62,11 91,15 116,21" fill="none" stroke="#B23A3A" stroke-width="2" stroke-linecap="round"/><line x1="4" y1="14" x2="116" y2="14" stroke="#D9A441" stroke-width="1" stroke-dasharray="3 3"/></svg>
+          </div>
+          <div class="metric"><div class="k">Net operating income</div><div class="v">$611.2K</div><div class="trend dn">▾ 6.4% vs FY24</div></div>
+          <div class="metric"><div class="k">Operating cash flow</div><div class="v">$538.9K</div><div class="trend fl">— flat · pending HITL</div></div>
+          <div class="metric"><div class="k">Current ratio</div><div class="v">1.42</div><div class="trend up">▴ from 1.36</div></div>
+        </div>
+
+        <div class="bt-grid">
+          <div class="bt-card">
+            <h6>Relationship structure</h6>
+            <div class="ent prime"><span class="edot"></span><b>Meridian Logistics LLC</b><span class="etag">primary borrower</span></div>
+            <div class="ent"><span class="edot" style="background:var(--gold)"></span><b>Meridian Freight LLC</b><span class="etag">guarantor entity</span></div>
+            <div class="ent"><span class="edot" style="background:var(--gold)"></span><b>Meridian Warehousing LLC</b><span class="etag">affiliate · cross-default</span></div>
+            <div class="alloc">⤷ <span><b>Consolidated allocation:</b> the FY24–25 statement satisfies the reporting obligation of all three entities — one upload, three obligations closed.</span></div>
+          </div>
+          <div class="bt-card">
+            <h6>Covenant ledger — next obligations</h6>
+            <table class="xtable" style="font-size:12.5px">
+              <thead><tr><th>Covenant</th><th>Entity</th><th>Due</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>Annual financials FY25</td><td>All 3</td><td>Jul 31</td><td><span class="badge ok">Fulfilled</span></td></tr>
+                <tr><td>Q3 bank statements</td><td>Logistics</td><td>Oct 15</td><td><span class="badge info">Scheduled</span></td></tr>
+                <tr class="low"><td>DSCR ≥ 1.20x</td><td>Relationship</td><td>Continuous</td><td><span class="badge warn">Flagged</span></td></tr>
+                <tr><td>Insurance certificate</td><td>Warehousing</td><td>Dec 01</td><td><span class="badge info">Scheduled</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bt-card" style="margin-bottom:16px">
+          <h6>Loan history — prior approaches by this relationship</h6>
+          <table class="xtable" style="font-size:12.5px">
+            <thead><tr><th>When</th><th>Product · amount</th><th>Outcome</th><th>Status detail</th></tr></thead>
+            <tbody>
+              <tr style="background:var(--ice)"><td><b>Current</b></td><td><b>Commercial term loan · $850K</b> <span style="color:var(--muted)">REQ-2026-0847</span></td><td><span class="badge warn">In process</span></td><td style="font-size:12px">Extraction verified · advisory DSCR flag open · pending loan officer review</td></tr>
+              <tr><td>Mar 2024</td><td>Equipment loan · $250K <span style="color:var(--muted)">REQ-2024-0312</span></td><td><span class="badge ok">Approved · active</span></td><td style="font-size:12px">Current on payments · covenants met every quarter since close</td></tr>
+              <tr><td>Aug 2022</td><td>Working capital line · $150K <span style="color:var(--muted)">REQ-2022-0788</span></td><td><span class="badge info">Withdrawn</span></td><td style="font-size:12px">Customer declined term sheet — pricing; relationship retained</td></tr>
+              <tr class="low"><td>Jun 2019</td><td>CRE purchase · $1.2M <span style="color:var(--muted)">REQ-2019-0405</span></td><td><span class="badge bad">Declined</span></td><td style="font-size:12px">DSCR 1.05x below policy floor at underwriting · re-apply guidance issued</td></tr>
+            </tbody>
+          </table>
+          <p style="font-size:12px;color:var(--muted);margin-top:10px;margin-bottom:0">Sourced from the document estate — every prior approach, its outcome, and its reason in one lookup. No more reconstructing a 2019 decision from folder names.</p>
+        </div>
+
+        <div class="auditline">🗂 Every twin update is appended to the audit log with actor, source document, and timestamp — this view is reconstructable for any examiner, for any date.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 9 · CUSTOMER ACTIVITY LOG ======================= -->
+<section class="screen" id="s9">
+  <div class="wrap">
+    <div class="shead">
+      <span class="snum">Step 9</span>
+      <h2>Customer activity log — every request, differentiated</h2>
+      <span class="req">Per-customer trail · full audit lineage</span>
+    </div>
+    <p class="slede">One view across every open request. Each customer carries their own identity mark and state color, and every event is typed — bank action, customer action, system, or alert — so a banker can read four very different journeys at a glance.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/activity</div>
+        <span class="badge info">4 active requests · live</span>
+      </div>
+      <div class="xwrap">
+        <div class="legend">
+          <span><i class="ldot bank"></i> Bank action</span>
+          <span><i class="ldot act"></i> Customer action</span>
+          <span><i class="ldot sys"></i> System · twin</span>
+          <span><i class="ldot alert"></i> Alert</span>
+        </div>
+
+        <div class="cust run">
+          <div class="chead">
+            <div class="cav a">PS</div>
+            <div class="ci2"><b>Priya Sharma</b><span>Meridian Logistics LLC · commercial loan</span></div>
+            <span class="req2">REQ-2026-0847</span>
+            <span class="badge warn">Twin extraction · 78%</span>
+          </div>
+          <div class="trail">
+            <div class="tev"><div class="tt">Aug 1</div><div class="td2"><i class="ldot bank"></i></div><div class="tx"><b>Secure request sent</b> <span>· 5 documents · link expires Aug 15</span></div></div>
+            <div class="tev"><div class="tt">Aug 1</div><div class="td2"><i class="ldot act"></i></div><div class="tx"><b>Email opened · portal login</b> <span>· identity verified</span></div></div>
+            <div class="tev"><div class="tt">Aug 2</div><div class="td2"><i class="ldot act"></i></div><div class="tx"><b>3 documents uploaded</b> <span>· held in parking bay</span></div></div>
+            <div class="tev"><div class="tt">Aug 2</div><div class="td2"><i class="ldot bank"></i></div><div class="tx"><b>Address proof re-requested</b> <span>· reviewer comment attached (lease dated 2019)</span></div></div>
+            <div class="tev"><div class="tt">Aug 3</div><div class="td2"><i class="ldot sys"></i></div><div class="tx"><b>Twin extraction running</b> <span>· financials · 47 values · provenance mapping</span></div><button class="btn ghost tb" style="padding:6px 12px;font-size:12px">Open</button></div>
+          </div>
+        </div>
+
+        <div class="cust done">
+          <div class="chead">
+            <div class="cav b">ML</div>
+            <div class="ci2"><b>Marcus Lee</b><span>Harbor Point Dental PC · equipment loan</span></div>
+            <span class="req2">REQ-2026-0831</span>
+            <span class="badge ok">With loan officer</span>
+          </div>
+          <div class="trail">
+            <div class="tev"><div class="tt">Jul 24</div><div class="td2"><i class="ldot bank"></i></div><div class="tx"><b>Secure request sent</b> <span>· 5 documents</span></div></div>
+            <div class="tev"><div class="tt">Jul 25</div><div class="td2"><i class="ldot act"></i></div><div class="tx"><b>All 5 documents uploaded</b> <span>· checklist complete in one session</span></div></div>
+            <div class="tev"><div class="tt">Jul 26</div><div class="td2"><i class="ldot bank"></i></div><div class="tx"><b>Parking bay review passed</b> <span>· all files matched checklist</span></div></div>
+            <div class="tev"><div class="tt">Jul 26</div><div class="td2"><i class="ldot sys"></i></div><div class="tx"><b>Twins built · 52 values extracted</b> <span>· 0 HITL exceptions</span></div></div>
+            <div class="tev"><div class="tt">Jul 27</div><div class="td2"><i class="ldot bank"></i></div><div class="tx"><b>Submitted for loan officer review</b> <span>· underwriting intake</span></div><button class="btn ghost tb" style="padding:6px 12px;font-size:12px">View package</button></div>
+          </div>
+        </div>
+
+        <div class="cust hold">
+          <div class="chead">
+            <div class="cav c">EO</div>
+            <div class="ci2"><b>Elena Ortiz</b><span>Blue Ridge Catering Co. · working capital</span></div>
+            <span class="req2">REQ-2026-0822</span>
+            <span class="badge warn">Resent · awaiting customer</span>
+          </div>
+          <div class="trail">
+            <div class="tev"><div class="tt">Jul 18</div><div class="td2"><i class="ldot bank"></i></div><div class="tx"><b>Secure request sent</b> <span>· 4 documents</span></div></div>
+            <div class="tev"><div class="tt">Jul 19</div><div class="td2"><i class="ldot act"></i></div><div class="tx"><b>Email opened</b> <span>· no upload started</span></div></div>
+            <div class="tev"><div class="tt">Aug 1</div><div class="td2"><i class="ldot sys"></i></div><div class="tx"><b>Link expired</b> <span>· 14-day window closed · nothing lost, nothing parked</span></div></div>
+            <div class="tev"><div class="tt">Aug 2</div><div class="td2"><i class="ldot bank"></i></div><div class="tx"><b>Request resent by banker</b> <span>· fresh single-purpose link · reminder scheduled Aug 6</span></div><button class="btn ghost tb" style="padding:6px 12px;font-size:12px">Nudge again</button></div>
+          </div>
+        </div>
+
+        <div class="cust stop">
+          <div class="chead">
+            <div class="cav d">RP</div>
+            <div class="ci2"><b>Rohan Patel</b><span>Ashford Motors LLC · line of credit</span></div>
+            <span class="req2">REQ-2026-0815</span>
+            <span class="badge bad">Session ended — fraud guard</span>
+          </div>
+          <div class="trail">
+            <div class="tev"><div class="tt">Jul 12</div><div class="td2"><i class="ldot bank"></i></div><div class="tx"><b>Secure request sent</b> <span>· 4 documents</span></div></div>
+            <div class="tev"><div class="tt">Jul 13</div><div class="td2"><i class="ldot act"></i></div><div class="tx"><b>Portal login · 1 document uploaded</b> <span>· parked safely</span></div></div>
+            <div class="tev"><div class="tt">Jul 13</div><div class="td2"><i class="ldot alert"></i></div><div class="tx"><b>Automation signals detected</b> <span>· scripted upload attempts · location mismatch</span></div></div>
+            <div class="tev"><div class="tt">Jul 13</div><div class="td2"><i class="ldot alert"></i></div><div class="tx"><b>Session terminated · link deactivated</b> <span>· uploads preserved · event logged</span></div></div>
+            <div class="tev"><div class="tt">Jul 14</div><div class="td2"><i class="ldot bank"></i></div><div class="tx"><b>Relationship manager notified</b> <span>· identity re-verification before any new link</span></div><button class="btn ghost tb" style="padding:6px 12px;font-size:12px">Review case</button></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap">
+    <span class="mark" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#2A3C7E" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 0 1 29.5 17" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+    </span>
+    <span>Freedom Bank of Virginia · Credit File Server 2.0 — UI concept mock</span>
+    <span class="sp">Prepared by Intics · A Zuci Company · Confidential</span>
+  </div>
+</footer>
+
+</body>
+</html>
