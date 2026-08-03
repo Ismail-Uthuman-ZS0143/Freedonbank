@@ -43,6 +43,18 @@ MAIL_SMTP_PORT = int(os.environ.get('MAIL_SMTP_PORT', '25'))
 MAIL_TEST_SERVER = os.environ.get('MAIL_TEST_SERVER', '')
 MAIL_TIMEOUT_SECONDS = int(os.environ.get('MAIL_TIMEOUT_SECONDS', '10'))
 MAIL_DNS_TIMEOUT_SECONDS = int(os.environ.get('MAIL_DNS_TIMEOUT_SECONDS', '5'))
+# Authenticated relay override: when all three are set, outbound mail goes
+# through this real mailbox via authenticated SMTP submission (port 587)
+# instead of direct-to-MX. Exists because direct-to-MX needs real port-25
+# egress, which this dev sandbox's network doesn't have (confirmed: even
+# raw TCP connect attempts fail with "Network unreachable") -- submission
+# ports are open here, so a real mailbox's app password is the only way to
+# get real delivery from this environment. Unset by default; direct-to-MX
+# stays the primary design for any environment where port 25 is reachable.
+MAIL_RELAY_HOST = os.environ.get('MAIL_RELAY_HOST', '')
+MAIL_RELAY_PORT = int(os.environ.get('MAIL_RELAY_PORT', '587'))
+MAIL_RELAY_USERNAME = os.environ.get('MAIL_RELAY_USERNAME', '')
+MAIL_RELAY_PASSWORD = os.environ.get('MAIL_RELAY_PASSWORD', '')
 
 INSTALLED_APPS = [
     'django.contrib.admin',

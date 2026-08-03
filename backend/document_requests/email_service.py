@@ -151,3 +151,25 @@ def log_review_flags_email(doc_request, flagged_items):
         to_email=doc_request.email, from_email=FROM_EMAIL,
         subject=subject, body_text=body,
     )
+
+
+def log_discrepancy_email(doc_request, twin, comment):
+    """Step 8's 'Send secure email with review comments' -- the HITL
+    comment is included verbatim (per the mockup copy), addressed to the
+    customer, referencing the specific document twin it's about."""
+    subject = f'A document needs your attention — {doc_request.reference_number}'
+    body = (
+        f'Dear {doc_request.borrower_name},\n\n'
+        f'Our team reviewed {twin.uploaded_file.file_name} for {doc_request.company_name} and found '
+        f'something that needs your attention:\n\n'
+        f'{comment}\n\n'
+        f'Reference {doc_request.reference_number}\n\n'
+        f'Warm regards,\n'
+        f'Commercial Lending Team\n'
+        f'Freedom Bank of Virginia · 10555 Main St., Fairfax, VA'
+    )
+    return _log_and_deliver(
+        document_request=doc_request, kind='discrepancy',
+        to_email=doc_request.email, from_email=FROM_EMAIL,
+        subject=subject, body_text=body,
+    )

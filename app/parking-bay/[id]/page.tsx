@@ -70,7 +70,7 @@ export default function ParkingBayPage() {
   const [comment, setComment] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [flagsJustSent, setFlagsJustSent] = useState<number | null>(null);
+  const [flagsJustSent, setFlagsJustSent] = useState<{ count: number; delivered: boolean } | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -124,7 +124,7 @@ export default function ParkingBayPage() {
       const res = await fetch(`/api/requests/${requestId}/parking-bay/send-flags-email`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) { setActionError(data.error || "Could not send the email."); return; }
-      setFlagsJustSent(data.flaggedCount);
+      setFlagsJustSent({ count: data.flaggedCount, delivered: data.delivered });
       await load();
     } finally {
       setBusy(false);
@@ -296,8 +296,10 @@ export default function ParkingBayPage() {
                 <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>🔒 One email per request · extraction runs in Step 7</span>
               </div>
               {flagsJustSent !== null && (
-                <p style={{ fontSize: 12, color: "var(--ok)", marginTop: 10 }}>
-                  Secure email logged for {flagsJustSent} flagged document{flagsJustSent === 1 ? "" : "s"} (no real mail provider configured yet — inspect it from the dashboard&apos;s &quot;View email&quot;).
+                <p style={{ fontSize: 12, color: flagsJustSent.delivered ? "var(--ok)" : "var(--bad)", marginTop: 10 }}>
+                  {flagsJustSent.delivered
+                    ? `✓ Secure email delivered for ${flagsJustSent.count} flagged document${flagsJustSent.count === 1 ? "" : "s"} — inspect it from the dashboard's "View email".`
+                    : `✕ Secure email logged for ${flagsJustSent.count} flagged document${flagsJustSent.count === 1 ? "" : "s"}, but real delivery failed (or is disabled/blocked) — inspect it from the dashboard's "View email".`}
                 </p>
               )}
             </div>

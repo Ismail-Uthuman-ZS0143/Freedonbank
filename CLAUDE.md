@@ -582,17 +582,138 @@ cell values came back correctly; then uploaded a genuinely corrupt "PDF"
 and confirmed the real pdfplumber error surfaced with a 400 and the stage
 didn't move. Cleaned up all test DB rows and disk folders afterward.
 
+## Post-Step-8 fixes — real Parking bay nav tab + a stale email-copy bug
+Two real issues found via a v5-mockup spot-check of the parking-bay pages
+(prompted by the user: "i could not see parking bay in the screen").
+
+1. **Missing nav tab, now fixed for real.** `WorkspaceNav` never had a
+   "Parking bay" tab because there was no global landing page to point it
+   at (parking bay was per-request only). Rather than leave the gap or link
+   to something fake, built a real one: `GET /api/requests/parking-bay`
+   (`parking_bay_list_view` in `views.py`) reuses the existing
+   `_review_state()` helper to list every request with at least one
+   uploaded document still sitting in the parking bay (not yet queued for
+   extraction) -- same counts, same logic as the per-request page, not a
+   separate approximation. New `app/parking-bay/page.tsx` (same
+   per-request-card pattern as `app/activity/page.tsx`). `WorkspaceNav`
+   gained the tab, with its active-tab match extended to also cover
+   `/parking-bay/<id>` so it highlights correctly from the per-request page.
+2. **Stale copy, found during the same review pass.** The flagged-comments
+   email confirmation on the parking-bay page still said "no real mail
+   provider configured yet" -- true before the Step 3 direct-to-MX upgrade,
+   false since. `send_review_flags_email_view` now returns a real
+   `delivered` field and the frontend shows honest "✓ delivered" /
+   "✕ delivery failed" copy, matching the pattern already used in the
+   dashboard's email preview modal.
+
+5 more tests (`test_global_parking_bay_list_*`, 189 total across the whole
+backend). Verified live end-to-end through the real proxy stack: a fresh
+request is absent from the list before any upload, appears with the correct
+pending count after one upload, tracks live approve/flag decisions, and
+disappears once extraction is queued.
+
+## Real bug found by browser testing — real-MX sends could crash a gunicorn worker
+User tested the app live in a browser and hit a raw Next.js runtime error
+("JSON.parse: unexpected character..."), not a normal error screen -- a
+strong signal the backend never sent back valid JSON at all. Reproducing it
+found a real, serious bug in `mail_delivery.py`, not a frontend issue:
+
+`smtplib.SMTP(host, port, timeout=N)`'s `timeout` kwarg only ever governs
+the `connect()` call -- it does **not** cover DNS resolution. In this dev
+sandbox, the system resolver (`getaddrinfo`, used internally by
+`socket.create_connection`) hangs **indefinitely** on real hostnames
+(reproduced directly: a connect attempt to a real resolved MX host blocked
+for 40+ seconds despite `timeout=10`). Since a customer request's email
+address determines the real-MX target dynamically, any live send to a real
+domain hung past gunicorn's default 30s worker timeout, and the worker got
+SIGABRT-killed mid-request by gunicorn's own watchdog -- which is exactly
+what produced the broken response the browser choked on. This had never
+been caught before because all prior live verification of the mail path
+used `MAIL_TEST_SERVER` (a local address, resolved instantly, no network
+DNS involved) -- the real-MX path was never actually exercised end-to-end
+until the user tested manually in the browser with a real `@intics.ai`
+address.
+
+**Fix:** `dns.resolver` (already used for the MX lookup) has its own
+bounded, working timeout in this sandbox -- system `getaddrinfo()` doesn't.
+New `_resolve_ip(host)` in `mail_delivery.py` resolves the real-MX target's
+A record via `dns.resolver` and hands `smtplib.SMTP()` a bare IP, never a
+hostname, so DNS resolution is never left to the hanging system resolver.
+`MAIL_TEST_SERVER`'s literal host bypasses this entirely (unchanged
+behavior, no real DNS query for a test-only address). 2 new regression
+tests in `MailDeliveryTests` (191 total across the whole backend).
+
+Verified live through the real proxy stack, twice: (1) reproduced the raw
+hang directly against a real resolved MX host (40+ seconds, unresponsive);
+(2) after the fix, a real send to a real `@intics.ai` address returned a
+proper HTTP 201 with valid JSON in ~10s (`delivered: false` -- see below),
+and the gunicorn worker PIDs were confirmed unchanged (survived, didn't
+crash). Cleaned up the test `DocumentRequest` rows created during
+verification (including two the user created themselves while testing live
+in the browser).
+
+**Still an honest gap, unchanged:** the fix stops the *crash* -- it does
+not, and cannot, unblock outbound port 25 in this sandbox. A real send to a
+real address still fails to actually deliver (`delivered: false`, clean
+10-second timeout) because this sandbox's network egress to port 25 is
+blocked, same constraint already documented under the Step 3 upgrade above.
+The code path is now provably correct end-to-end; only the last hop (an
+actual reachable port 25) needs a host without that restriction.
+
+## Step 8 — Extraction Review & Handoff — done (business twin explicitly scoped out)
+Two scope questions were asked and answered before building:
+
+1. Build the mockup's Step 8b business twin (covenant ledger, DSCR
+   sparklines, loan history, advisory flags)? **Skip entirely, document as
+   a gap** -- no covenant/entity/loan-history data model exists anywhere in
+   this project; building one would mean inventing a whole new domain from
+   scratch, not extending something real.
+2. Should a discrepancy email trigger document-twin versioning ("v2 of 2,
+   supersedes...")? **Keep it simple, no versioning** -- the email sends
+   for real, but doesn't mark anything resolved or open a new version; the
+   request just stays open until a banker resolves it through the existing
+   review tools (re-running extraction on a fresh upload like any other
+   document).
+
+What got built:
+- `DocumentRequest.submitted_for_review_at` (migration `0011`) -- a real
+  one-time timestamp. `_extraction_review_gate()` in `views.py` is the real
+  gate: at least one `ExtractedValue` must exist (an empty request can't
+  submit) **and** every value across every `DocumentTwin` in the request
+  must be at/above `CONFIDENCE_ROUTING_THRESHOLD` (0.85, the same real
+  threshold Step 7 already computes).
+- `POST /api/requests/<id>/submit-for-review` -- 400 if already submitted
+  or if any value is still HITL-pending, otherwise sets the timestamp.
+- `POST /api/requests/<id>/extraction/<twin_id>/discrepancy` -- 400 without
+  a comment, otherwise sends the comment verbatim via
+  `log_discrepancy_email()` in `email_service.py`, which reuses the same
+  `_log_and_deliver()` real direct-to-MX pipeline as every other email in
+  this project (not a separate log-only path). `RequestEmail.KIND_CHOICES`
+  gained `'discrepancy'`.
+- `app/extraction/[id]/page.tsx` gained a discrepancy-comment panel (styled
+  like the parking-bay review-comments panel) and a "Handoff" panel with
+  the submit button (disabled unless the API's `canSubmitForReview` is
+  true) or a submitted badge.
+
+11 new tests (`ExtractionReviewAndHandoffTests`, 201 total across the whole
+backend). Verified live end-to-end through the real proxy stack: sent a
+request, uploaded real `$100`-containing files to all 12 default checklist
+items, approved and kicked off extraction, advanced all 12 twins to
+`extracted`, confirmed `canSubmitForReview: true` and a real extracted
+value; sent a real discrepancy email and confirmed the logged email body
+had the comment verbatim and the correct file name; submitted for review
+and confirmed a real persisted timestamp; confirmed double-submit 400s.
+Cleaned up the test `DocumentRequest` row and its disk folder afterward.
+
 ## Next step when resuming
-Step 8 (extraction review & handoff + business twin): HITL review of
-extracted values now has real data to work with (`ExtractedValue.confidence`
-+ `needs_review`, real source pointers) -- 8.1/8.2 no longer need a scope
-conversation. Still needs: "Submit for loan officer review" gated on zero
-HITL-pending values remaining; a discrepancy path that emails the customer
-verbatim (reuse the Step 6 flag+comment+email pattern) and keeps the
-obligation open; document twin versioning on a corrected re-upload; and the
-business twin's covenant ledger / DSCR advisory-flag display, which is
-still a real gap (no covenant data model exists) worth flagging to the user
-before assuming how deep to build it.
+Step 9 per the mockup's v3+ numbering is "Credit report" -- not built, and
+not investigated yet (this project's Step 7-9 sections still used the
+original v2 numbering until this point; the "Step numbering" note earlier
+in this file is still unresolved and should be revisited before starting,
+since v3 inserted two new macro-steps -- Credit report, Term sheet &
+commitment -- between Extraction and the old "Customer activity log" step,
+and Customer activity itself was already built out of order as part of
+Step 2c/2d above).
 
 ## Unrelated work in this session (for context, not blocking)
 A separate project, `extract-lab` (`/home/ismail/Workspace/Extarct

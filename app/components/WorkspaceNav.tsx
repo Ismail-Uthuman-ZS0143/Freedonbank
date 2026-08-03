@@ -2,15 +2,13 @@
 
 import { usePathname, useRouter } from "next/navigation";
 
-// Only two tabs -- Overview and Customer activity -- because those are the
-// only two global (not per-request) screens this project actually has.
-// The v5 mockup also shows Parking bay / Loans / Portfolio tabs here, but
-// those don't have a real global landing page in this app (parking bay is
-// per-request only, and Loans/Portfolio need pipeline stages that aren't
-// built) -- omitted rather than linked to something fake.
+// The v5 mockup also shows Loans / Portfolio tabs here, but those need
+// pipeline stages (Credit review, Term sheet, etc.) that aren't built in
+// this project -- omitted rather than linked to something fake.
 const TABS = [
   { href: "/dashboard", label: "Overview" },
   { href: "/activity", label: "Customer activity" },
+  { href: "/parking-bay", label: "Parking bay" },
 ];
 
 export default function WorkspaceNav({ activeCount }: { activeCount?: number }) {
@@ -20,7 +18,7 @@ export default function WorkspaceNav({ activeCount }: { activeCount?: number }) 
   return (
     <nav aria-label="Workspace" style={{ display: "flex", gap: 4, marginBottom: 22, borderBottom: "1px solid var(--line)" }}>
       {TABS.map(tab => {
-        const active = pathname === tab.href;
+        const active = pathname === tab.href || (tab.href === "/parking-bay" && pathname?.startsWith("/parking-bay/"));
         return (
           <button key={tab.href} onClick={() => router.push(tab.href)}
             style={{

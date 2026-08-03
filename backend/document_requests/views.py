@@ -19,6 +19,7 @@ from .validation import validate_fields, all_valid
 from . import checklist as checklist_module
 from .email_service import (
     send_secure_request_email, log_fraud_alert_email, log_completion_confirmation_email, log_review_flags_email,
+    log_discrepancy_email,
 )
 from .extraction import classify
 from . import content_extraction
@@ -664,6 +665,36 @@ def _review_state(doc_request):
 
 
 @api_view(['GET'])
+def parking_bay_list_view(request):
+    """The real global landing page for the workspace nav's 'Parking bay'
+    tab -- every request that has at least one uploaded document still
+    sitting in the parking bay (not yet queued for extraction). A request
+    with nothing uploaded yet (still awaiting the customer) or one that's
+    already been queued for extraction doesn't belong here."""
+    candidates = DocumentRequest.objects.filter(
+        extraction_queued_at__isnull=True, status__in=['sent', 'uploads_complete'],
+    ).prefetch_related('checklist_items__current_file')
+
+    rows = []
+    for r in candidates:
+        items, reviewable, approved, flagged, review_complete = _review_state(r)
+        if not reviewable:
+            continue
+        rows.append({
+            'id': r.id,
+            'borrowerName': r.borrower_name,
+            'companyName': r.company_name,
+            'referenceNumber': r.reference_number,
+            'totalCount': len(items),
+            'approvedCount': len(approved),
+            'flaggedCount': len(flagged),
+            'pendingCount': len(reviewable) - len(approved) - len(flagged),
+            'reviewComplete': review_complete,
+        })
+    return Response({'requests': rows})
+
+
+@api_view(['GET'])
 def parking_bay_view(request, request_id):
     try:
         doc_request = DocumentRequest.objects.get(id=request_id)
@@ -725,7 +756,7 @@ def send_review_flags_email_view(request, request_id):
         return Response({'error': 'No flagged documents to notify the customer about.'}, status=status.HTTP_400_BAD_REQUEST)
 
     email = log_review_flags_email(doc_request, flagged)
-    return Response({'emailId': email.id, 'flaggedCount': len(flagged)})
+    return Response({'emailId': email.id, 'flaggedCount': len(flagged), 'delivered': email.delivered})
 
 
 @api_view(['POST'])
@@ -806,6 +837,17 @@ def _business_twin_json(twin):
     }
 
 
+def _extraction_review_gate(twins):
+    """Step 8's real gate for 'Submit for loan officer review': every
+    ExtractedValue across every document twin in the request must be at/
+    above CONFIDENCE_ROUTING_THRESHOLD. False (not an error) when there's
+    nothing to review yet -- an empty request has nothing to submit."""
+    all_values = [v for t in twins for v in t.extracted_values.all()]
+    if not all_values:
+        return False
+    return all(v.confidence >= CONFIDENCE_ROUTING_THRESHOLD for v in all_values)
+
+
 @api_view(['GET'])
 def extraction_view(request, request_id):
     try:
@@ -829,7 +871,56 @@ def extraction_view(request, request_id):
             'type': e.event_type, 'detail': e.detail, 'at': e.created_at.isoformat(),
             'documentTwinId': e.document_twin_id,
         } for e in events],
+        'canSubmitForReview': doc_request.submitted_for_review_at is None and _extraction_review_gate(twins),
+        'submittedForReviewAt': doc_request.submitted_for_review_at.isoformat() if doc_request.submitted_for_review_at else None,
     })
+
+
+@api_view(['POST'])
+def submit_for_review_view(request, request_id):
+    """Step 8's 'Submit for loan officer review' -- packages the request
+    once every extracted value across every queued document is verified
+    (no HITL-pending values remain). No real loan-officer queue/handoff
+    destination exists past this point yet -- this is a real gate over real
+    data, honestly stopping short of a downstream workflow that isn't
+    built (see TEST_CASES.md's Step 8 scope note)."""
+    try:
+        doc_request = DocumentRequest.objects.get(id=request_id)
+    except DocumentRequest.DoesNotExist:
+        return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if doc_request.submitted_for_review_at is not None:
+        return Response({'error': 'This request has already been submitted for loan officer review.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    twins = list(doc_request.document_twins.prefetch_related('extracted_values').all())
+    if not _extraction_review_gate(twins):
+        return Response({'error': 'Every extracted value must be verified (no HITL-pending values) before submitting.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    doc_request.submitted_for_review_at = timezone.now()
+    doc_request.save(update_fields=['submitted_for_review_at'])
+    return Response({'submittedForReviewAt': doc_request.submitted_for_review_at.isoformat()})
+
+
+@api_view(['POST'])
+def send_discrepancy_email_view(request, request_id, twin_id):
+    """Step 8's 'Send secure email with review comments' -- the HITL
+    comment goes to the customer verbatim. Sending doesn't mark anything
+    resolved: there's no formal re-upload/re-extraction/versioning cycle in
+    this pass (explicit scope decision), so the request simply stays open
+    until a banker judges it resolved through the existing review tools."""
+    try:
+        twin = DocumentTwin.objects.select_related('document_request', 'uploaded_file').get(
+            id=twin_id, document_request_id=request_id,
+        )
+    except DocumentTwin.DoesNotExist:
+        return Response({'error': 'Document twin not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    comment = (request.data.get('comment') or '').strip()
+    if not comment:
+        return Response({'error': 'A comment is required to query the customer about a discrepancy.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    email = log_discrepancy_email(twin.document_request, twin, comment)
+    return Response({'emailId': email.id})
 
 
 @api_view(['POST'])

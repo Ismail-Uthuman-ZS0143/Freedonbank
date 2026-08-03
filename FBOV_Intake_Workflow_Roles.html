@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FBOV — Intake Workflow · Role-Based Silos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=Public+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy-900:#101C42; --navy:#1B2A5E; --navy-700:#2A3C7E; --navy-100:#DCE5F4;
+  --ice:#EEF3FB; --paper:#FAFBFD; --white:#FFFFFF;
+  --gold:#E87722; --gold-deep:#B85B12; --gold-soft:#FBE8D6;
+  --ink:#1E2433; --muted:#5D6A85; --line:#D9E1EF; --line-soft:#E7EDF7;
+  --ok:#1E7A46; --ok-bg:#E9F4EC; --bad:#B23A3A; --bad-bg:#FBECEC;
+  --warn:#8A5A10; --warn-bg:#FBF1DC;
+  --display:"Bricolage Grotesque",sans-serif; --body:"Public Sans",sans-serif; --serif:"Newsreader",serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--body);background:var(--paper);color:var(--ink);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+
+/* ---------- swirl mark ---------- */
+.mark{display:inline-block;vertical-align:middle}
+.mark svg{display:block}
+
+/* ---------- top bar ---------- */
+.topbar{position:sticky;top:0;z-index:50;background:var(--navy);color:#fff;border-bottom:3px solid var(--gold)}
+.topbar .wrap{display:flex;align-items:center;gap:18px;height:62px}
+.brandline{display:flex;align-items:center;gap:12px}
+.brandline .name{font-family:var(--display);font-weight:600;font-size:17px;letter-spacing:.2px}
+.brandline .tag{font-size:11px;color:#B9C6E6;letter-spacing:.4px}
+.stepnav{margin-left:auto;display:flex;gap:1px}
+.stepnav a{display:flex;align-items:center;gap:5px;padding:6px 8px;border-radius:999px;font-size:11.5px;color:#C7D2EE;text-decoration:none;transition:background .15s}
+.stepnav a:hover,.stepnav a:focus-visible{background:var(--navy-700);color:#fff;outline:none}
+.stepnav .n{width:16px;height:16px;border-radius:50%;background:var(--navy-700);color:#fff;font-size:9.5px;display:flex;align-items:center;justify-content:center;font-weight:600}
+.stepnav a:hover .n{background:var(--gold)}
+
+/* ---------- hero ---------- */
+.hero{background:var(--navy);color:#fff;padding:64px 0 72px;position:relative;overflow:hidden}
+.hero::after{content:"";position:absolute;right:-160px;top:-160px;width:520px;height:520px;border-radius:50%;
+  border:56px solid var(--navy-700);border-top-color:var(--gold);transform:rotate(-32deg);opacity:.45}
+.hero .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
+.hero h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,4.4vw,46px);line-height:1.08;margin:14px 0 16px;max-width:15ch}
+.hero p{color:#C7D2EE;max-width:56ch;font-size:16px}
+.hero .meta{margin-top:26px;display:flex;flex-wrap:wrap;gap:10px}
+.chip{display:inline-flex;align-items:center;gap:7px;background:var(--navy-700);border:1px solid #3A4D96;color:#DCE5F4;font-size:12px;padding:6px 13px;border-radius:999px}
+.chip b{color:#fff;font-weight:600}
+
+/* ---------- screen sections ---------- */
+.screen{padding:72px 0 26px}
+.screen.alt{background:var(--ice)}
+.shead{display:flex;align-items:baseline;gap:16px;margin-bottom:26px}
+.snum{font-family:var(--display);font-weight:700;font-size:15px;color:var(--gold);background:var(--gold-soft);border-radius:8px;padding:5px 11px;white-space:nowrap}
+.shead h2{font-family:var(--display);font-weight:600;font-size:25px;color:var(--navy)}
+.shead .req{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
+.slede{max-width:70ch;color:var(--muted);margin:-14px 0 28px;font-size:14.5px}
+
+/* ---------- browser frame ---------- */
+.frame{background:var(--white);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px -30px rgba(16,28,66,.25);overflow:hidden;margin-bottom:46px}
+.chrome{display:flex;align-items:center;gap:12px;background:#F2F5FB;border-bottom:1px solid var(--line);padding:10px 16px}
+.dots{display:flex;gap:6px}
+.dots i{width:10px;height:10px;border-radius:50%;background:#CBD5EA;display:block}
+.urlbar{flex:1;display:flex;align-items:center;gap:8px;background:var(--white);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:12.5px;color:var(--muted)}
+.urlbar .lock{color:var(--ok)}
+.badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.info{background:var(--navy-100);color:var(--navy)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.bad{background:var(--bad-bg);color:var(--bad)}
+
+/* ---------- buttons & inputs ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--body);font-weight:600;font-size:13.5px;border-radius:9px;padding:10px 18px;cursor:pointer;border:1px solid transparent;transition:transform .06s,background .15s;white-space:nowrap}
+.btn:active{transform:scale(.985)}
+.btn.primary{background:var(--gold);color:#fff}
+.btn.primary:hover{background:var(--gold-deep)}
+.btn.navy{background:var(--navy);color:#fff}
+.btn.navy:hover{background:var(--navy-700)}
+.btn.ghost{background:var(--white);color:var(--navy);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--navy-100);background:var(--ice)}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:6px;letter-spacing:.02em}
+.field input{width:100%;font-family:var(--body);font-size:14px;color:var(--ink);background:var(--white);border:1.5px solid var(--line);border-radius:9px;padding:10px 13px;transition:border .15s,box-shadow .15s}
+.field input:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px var(--navy-100)}
+.field.ok input{border-color:#7FBF97}
+.field.bad input{border-color:#DE9C9C;background:#FEFAFA}
+.hint{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:6px}
+.hint.ok{color:var(--ok)} .hint.bad{color:var(--bad)}
+.hint svg{flex:none}
+
+/* ---------- 1 · login ---------- */
+.login{display:grid;grid-template-columns:1fr 1fr;min-height:480px}
+.login .side{background:var(--navy);color:#fff;padding:46px 44px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.login .side::after{content:"";position:absolute;left:-130px;bottom:-150px;width:380px;height:380px;border-radius:50%;border:44px solid var(--navy-700);border-right-color:var(--gold);transform:rotate(24deg);opacity:.5}
+.login .side .tagline{font-family:var(--serif);font-style:italic;font-size:21px;line-height:1.4;color:#DCE5F4;margin-top:auto;position:relative;z-index:1;max-width:20ch}
+.login .side .sub{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-top:14px;position:relative;z-index:1}
+.login .form{padding:46px 48px;display:flex;flex-direction:column;justify-content:center;gap:16px}
+.login h3{font-family:var(--display);font-weight:600;font-size:21px;color:var(--navy)}
+.login .lsub{font-size:13px;color:var(--muted);margin:-10px 0 6px}
+.divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px;margin:2px 0}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.mfa{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);justify-content:center}
+
+/* ---------- 2 · dashboard ---------- */
+.dash{padding:30px 34px}
+.dhead{display:flex;align-items:center;gap:14px;margin-bottom:24px}
+.dhead h3{font-family:var(--display);font-weight:600;font-size:20px;color:var(--navy)}
+.dhead .who{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+.metric{background:var(--ice);border-radius:12px;padding:16px 18px;border-top:3px solid var(--navy)}
+.metric.hot{border-top-color:var(--gold)}
+.metric .k{font-size:12.5px;color:var(--muted);font-weight:500}
+.metric .v{font-family:var(--display);font-weight:700;font-size:27px;color:var(--navy);margin-top:3px}
+.metric .v.bad{color:var(--bad)}
+.panel{border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-bottom:20px}
+.panel .phead{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.panel .phead h4{font-family:var(--display);font-weight:600;font-size:16px;color:var(--navy)}
+.panel .phead .note{margin-left:auto;font-size:12px;color:var(--muted)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px}
+.factions{display:flex;align-items:center;gap:12px;margin-top:20px}
+.factions .note{margin-left:auto;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.rrow{display:flex;align-items:center;gap:12px;padding:12px 2px;border-top:1px solid var(--line-soft);font-size:13.5px}
+.rrow .who2{flex:1;min-width:0}
+.rrow .co{color:var(--muted)}
+.rrow .btn{padding:7px 14px;font-size:12.5px}
+
+/* ---------- 3 · email ---------- */
+.mailwrap{background:var(--ice);padding:34px}
+.mail{max-width:620px;margin:0 auto;background:var(--white);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 16px 44px -26px rgba(16,28,66,.28)}
+.mail .mhead{padding:14px 22px;border-bottom:1px solid var(--line-soft);font-size:12.5px;color:var(--muted);display:grid;gap:4px}
+.mail .mhead b{color:var(--ink);font-weight:600}
+.mail .band{background:var(--navy);color:#fff;padding:22px 26px;display:flex;align-items:center;gap:13px;border-bottom:3px solid var(--gold)}
+.mail .band .bn{font-family:var(--display);font-weight:600;font-size:16px}
+.mail .band .bt{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#B9C6E6}
+.mail .mbody{padding:28px 30px;font-size:14px;line-height:1.7}
+.mail .mbody p{margin-bottom:14px}
+.doclist{border:1px solid var(--line);border-radius:11px;margin:6px 0 18px;overflow:hidden}
+.doclist .di{display:flex;align-items:center;gap:10px;padding:10px 15px;font-size:13.5px;border-top:1px solid var(--line-soft)}
+.doclist .di:first-child{border-top:none;background:var(--ice);font-weight:600;color:var(--navy);font-size:12.5px;letter-spacing:.04em}
+.mail .cta{display:block;text-align:center;background:var(--gold);color:#fff;font-weight:600;font-size:14.5px;border-radius:10px;padding:13px;margin:20px 0 8px;text-decoration:none}
+.mail .cta:hover{background:var(--gold-deep)}
+.mail .expiry{text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px}
+.mail .sig{margin-top:18px;padding-top:16px;border-top:1px solid var(--line-soft);font-size:13.5px}
+.mail .mfoot{background:var(--ice);padding:14px 26px;font-size:11px;color:var(--muted);line-height:1.6}
+
+/* ---------- 4 · portal ---------- */
+.portal{padding:28px 34px}
+.phead2{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+.phead2 h3{font-family:var(--display);font-weight:600;font-size:19px;color:var(--navy)}
+.phead2 .sub2{font-size:13px;color:var(--muted)}
+.timer{margin-left:auto;display:flex;align-items:center;gap:11px;background:var(--ice);border:1px solid var(--line);border-radius:999px;padding:7px 15px 7px 8px}
+.timer .t{font-family:var(--display);font-weight:700;font-size:16px;color:var(--navy);font-variant-numeric:tabular-nums}
+.timer .tl{font-size:10.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.bay{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted);background:var(--ice);border-radius:10px;padding:10px 15px;margin:16px 0 20px}
+.check{border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.check .ci{display:grid;grid-template-columns:26px 1fr auto;gap:13px;align-items:center;padding:15px 19px;border-top:1px solid var(--line-soft)}
+.check .ci:first-child{border-top:none}
+.ci .nm{font-weight:600;font-size:14px}
+.ci .ds{font-size:12.5px;color:var(--muted);margin-top:1px}
+.tick{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.tick.done{background:var(--ok-bg);color:var(--ok)}
+.tick.load{background:var(--gold-soft);color:var(--gold-deep)}
+.tick.wait{background:var(--ice);color:var(--muted);border:1.5px dashed var(--line)}
+.bar{height:6px;background:var(--line-soft);border-radius:99px;overflow:hidden;margin-top:8px;max-width:340px}
+.bar i{display:block;height:100%;width:64%;background:var(--gold);border-radius:99px}
+.fraud{display:flex;gap:13px;background:var(--bad-bg);border:1px solid #EBC6C6;border-radius:12px;padding:15px 18px;margin-top:20px}
+.fraud .fi{color:var(--bad);flex:none;margin-top:2px}
+.fraud b{color:var(--bad)}
+.fraud p{font-size:13px;color:#7A3030;margin-top:2px}
+
+/* ---------- 5 · terminal states ---------- */
+.terminal{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:46px}
+.tcard{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:40px 36px;text-align:center;box-shadow:0 18px 48px -30px rgba(16,28,66,.22)}
+.tcard .ico{width:62px;height:62px;border-radius:50%;margin:0 auto 18px;display:flex;align-items:center;justify-content:center}
+.tcard.good .ico{background:var(--ok-bg);color:var(--ok)}
+.tcard.stop .ico{background:var(--bad-bg);color:var(--bad)}
+.tcard h4{font-family:var(--display);font-weight:600;font-size:19px;color:var(--navy);margin-bottom:9px}
+.tcard.stop h4{color:var(--bad)}
+.tcard p{font-size:13.5px;color:var(--muted);max-width:36ch;margin:0 auto 8px}
+.tcard .fine{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px;justify-content:center;margin-top:14px}
+
+/* ---------- footer ---------- */
+.foot{background:var(--navy-900);color:#8FA0CB;padding:34px 0;margin-top:60px;font-size:12.5px}
+.foot .wrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.foot .sp{margin-left:auto}
+
+/* ---------- 6 · parking bay review ---------- */
+.review{display:grid;grid-template-columns:330px 1fr;min-height:540px}
+.flist{border-right:1px solid var(--line);background:#FCFDFF;padding:16px 14px}
+.flist .lt{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:4px 10px 10px}
+.frow{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:10px;cursor:pointer;font-size:13px;border:1px solid transparent}
+.frow:hover{background:var(--ice)}
+.frow.sel{background:var(--white);border-color:var(--navy-100);box-shadow:0 4px 14px -8px rgba(16,28,66,.25)}
+.frow .fic{flex:none;font-size:15px}
+.frow .fn{flex:1;min-width:0}
+.frow .fn b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .fn span{font-size:11.5px;color:var(--muted)}
+.stat{width:9px;height:9px;border-radius:50%;flex:none}
+.stat.ok{background:var(--ok)} .stat.run{background:var(--gold)} .stat.wait{background:#C6D1E6} .stat.bad{background:var(--bad)}
+.pv{padding:22px 26px;display:flex;flex-direction:column;gap:16px}
+.pvhead{display:flex;align-items:center;gap:12px}
+.pvhead h4{font-family:var(--display);font-weight:600;font-size:16px;color:var(--navy)}
+.pvhead .meta2{font-size:12px;color:var(--muted)}
+.pdoc{border:1px solid var(--line);border-radius:12px;background:var(--white);padding:22px 26px;flex:1;min-height:190px}
+.pdoc .ph{font-family:var(--serif);font-size:15px;color:var(--navy);margin-bottom:12px;border-bottom:1px solid var(--line-soft);padding-bottom:8px}
+.skel{height:8px;border-radius:4px;background:var(--line-soft);margin-bottom:9px}
+.skel.w60{width:60%}.skel.w80{width:80%}.skel.w45{width:45%}.skel.w70{width:70%}
+.skelrow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px}
+.skelrow .cell{height:26px;border:1px solid var(--line-soft);border-radius:6px;background:#FCFDFF}
+.decide{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.dcard{border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.dcard.good{border-color:#BFDCC9;background:#FBFEFC}
+.dcard.redo{border-color:#EBD3B8;background:#FFFDFA}
+.dcard h5{font-family:var(--display);font-weight:600;font-size:14px;color:var(--navy);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.dcard p{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+.dcard textarea{width:100%;font-family:var(--body);font-size:13px;color:var(--ink);border:1.5px solid var(--line);border-radius:9px;padding:9px 12px;resize:vertical;min-height:64px;margin-bottom:12px}
+.dcard textarea:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px var(--navy-100)}
+
+/* ---------- 7 · twin extraction ---------- */
+.xwrap{padding:26px 30px}
+.xtop{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+.xtop h4{font-family:var(--display);font-weight:600;font-size:17px;color:var(--navy)}
+.xprog{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}
+.xbar{width:170px;height:7px;background:var(--line-soft);border-radius:99px;overflow:hidden}
+.xbar i{display:block;height:100%;width:78%;background:var(--gold);border-radius:99px}
+.track{border:1px solid var(--line);border-radius:13px;padding:18px 20px;margin-bottom:16px}
+.track .th{display:flex;align-items:center;gap:9px;margin-bottom:16px}
+.track .th h5{font-family:var(--display);font-weight:600;font-size:14px;color:var(--navy)}
+.track .th .badge{margin-left:auto}
+.stages{display:grid;grid-template-columns:repeat(5,1fr);gap:0;position:relative}
+.stage{text-align:center;position:relative;padding:0 6px}
+.stage::before{content:"";position:absolute;top:13px;left:-50%;width:100%;height:2px;background:var(--line)}
+.stage:first-child::before{display:none}
+.stage.done::before{background:var(--ok)}
+.stage.run::before{background:var(--gold)}
+.sdot{width:26px;height:26px;border-radius:50%;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;position:relative;z-index:1;background:var(--white);border:2px solid var(--line);color:var(--muted)}
+.stage.done .sdot{background:var(--ok);border-color:var(--ok);color:#fff}
+.stage.run .sdot{background:var(--gold);border-color:var(--gold);color:#fff}
+.stage .sn{font-size:12px;font-weight:600;color:var(--navy)}
+.stage.wait .sn{color:var(--muted);font-weight:500}
+.stage .sd{font-size:11px;color:var(--muted);margin-top:2px}
+.logbox{background:var(--navy-900);border-radius:12px;padding:16px 20px;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;line-height:1.9;color:#8FA0CB}
+.logbox .lt2{font-family:var(--body);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#5D6FA5;margin-bottom:8px}
+.logbox .ok2{color:#7FD6A4}.logbox .gold2{color:#F0A868}.logbox .dim{color:#5D6FA5}
+
+/* ---------- 8 · extraction review ---------- */
+.xtable{width:100%;border-collapse:collapse;font-size:13px}
+.xtable th{text-align:left;font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line)}
+.xtable td{padding:11px 12px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+.xtable tr.low td{background:var(--warn-bg)}
+.src{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--navy);background:var(--ice);border:1px solid var(--line);border-radius:6px;padding:2px 8px;white-space:nowrap}
+.conf{font-variant-numeric:tabular-nums;font-weight:600}
+.conf.hi{color:var(--ok)}.conf.lo{color:var(--warn)}
+.handoff{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}
+
+/* ---------- 9 · customer activity log ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:20px;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.ldot{width:10px;height:10px;border-radius:50%;display:inline-block;box-sizing:border-box}
+.ldot.bank{background:var(--navy)}
+.ldot.act{background:var(--gold)}
+.ldot.sys{background:var(--ok)}
+.ldot.alert{background:var(--bad)}
+.cust{background:var(--white);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:13px;padding:18px 22px;margin-bottom:16px}
+.cust.run{border-left-color:var(--gold)} .cust.done{border-left-color:var(--ok)}
+.cust.hold{border-left-color:#D9A441} .cust.stop{border-left-color:var(--bad)}
+.chead{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.cav{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;flex:none}
+.cav.a{background:var(--navy);color:#fff} .cav.b{background:var(--gold);color:#fff}
+.cav.c{background:var(--navy-100);color:var(--navy)} .cav.d{background:var(--gold-soft);color:var(--gold-deep)}
+.chead .ci2{flex:1;min-width:0}
+.chead .ci2 b{font-size:14.5px}
+.chead .ci2 span{display:block;font-size:12px;color:var(--muted)}
+.chead .req2{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--muted);background:var(--ice);border:1px solid var(--line);border-radius:6px;padding:3px 9px}
+.trail{display:flex;flex-direction:column;gap:0}
+.tev{display:grid;grid-template-columns:64px 22px 1fr auto;gap:0 10px;align-items:start;font-size:13px;position:relative;padding:5px 0}
+.tev .tt{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);padding-top:3px;text-align:right}
+.tev .td2{position:relative;display:flex;justify-content:center}
+.tev .td2::before{content:"";position:absolute;top:16px;bottom:-10px;width:2px;background:var(--line-soft)}
+.tev:last-child .td2::before{display:none}
+.tev .ldot{margin-top:4px;position:relative;z-index:1;box-shadow:0 0 0 3px var(--white)}
+.tev .tx b{font-weight:600}
+.tev .tx span{color:var(--muted)}
+.tev .tb{justify-self:end}
+
+/* ---------- 8 · twin detail cards ---------- */
+.twinmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:18px;background:#FCFDFF}
+.kv .k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.kv .v{font-size:13.5px;font-weight:600;color:var(--navy);margin-top:3px}
+.kv .v .sub3{display:block;font-size:11.5px;font-weight:500;color:var(--muted)}
+.bt-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-bottom:16px}
+.bt-card{border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.bt-card h6{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.ent{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;font-size:13px;background:var(--white)}
+.ent.prime{border-color:var(--navy-100);background:var(--ice)}
+.ent .edot{width:8px;height:8px;border-radius:50%;background:var(--navy);flex:none}
+.ent b{flex:1}
+.ent .etag{font-size:11px;color:var(--muted)}
+.alloc{display:flex;gap:10px;align-items:flex-start;background:var(--gold-soft);border:1px solid #F0D9C0;border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--gold-deep);margin-top:4px}
+.ind{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.ind .metric .v{font-size:22px}
+.trend{font-size:11.5px;font-weight:600;margin-top:2px}
+.trend.dn{color:var(--bad)} .trend.up{color:var(--ok)} .trend.fl{color:var(--muted)}
+.spark{display:block;margin-top:6px}
+.flagbar{display:flex;gap:12px;align-items:flex-start;background:var(--warn-bg);border:1px solid #EBD9B4;border-radius:12px;padding:13px 16px;margin-bottom:16px}
+.flagbar .fic2{color:var(--warn);flex:none;font-size:17px;margin-top:1px}
+.flagbar b{color:var(--warn)}
+.flagbar p{font-size:12.5px;color:#6B4A10;margin-top:2px}
+.auditline{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+
+/* ---------- 2b · checklist editor ---------- */
+.dl-row{display:grid;grid-template-columns:22px 1fr auto auto;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:11px;margin-bottom:9px;background:var(--white)}
+.dl-row .grip{color:#B9C4DB;font-size:14px;cursor:grab;letter-spacing:-1px;user-select:none}
+.dl-row .dn2 b{display:block;font-size:13.5px}
+.dl-row .dn2 span{font-size:12px;color:var(--muted)}
+.dl-row .rm{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--white);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.dl-row .rm:hover{border-color:#DE9C9C;color:var(--bad);background:var(--bad-bg)}
+.pill{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;cursor:pointer;user-select:none}
+.pill.req{background:var(--navy-100);color:var(--navy)}
+.pill.opt{background:var(--ice);color:var(--muted);border:1px solid var(--line)}
+.addbar{display:flex;gap:10px;margin:16px 0 12px}
+.addbar input{flex:1;font-family:var(--body);font-size:13.5px;border:1.5px solid var(--line);border-radius:9px;padding:10px 13px}
+.addbar input:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px var(--navy-100)}
+.libchips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.libchips .lc{font-size:12px;color:var(--navy);background:var(--ice);border:1px dashed var(--navy-100);border-radius:999px;padding:6px 13px;cursor:pointer;transition:all .15s}
+.libchips .lc:hover{background:var(--navy-100);border-style:solid}
+.tmpl{display:flex;align-items:center;gap:10px;background:var(--ice);border:1px solid var(--line);border-radius:11px;padding:11px 15px;margin-bottom:16px;font-size:13px}
+.tmpl select{font-family:var(--body);font-size:13px;color:var(--navy);font-weight:600;border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:var(--white)}
+
+/* ---------- 2b · customize modal ---------- */
+.dim{background:#141C38;padding:34px;display:flex;justify-content:center}
+.modal{background:var(--white);border-radius:14px;max-width:860px;width:100%;padding:0 0 22px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.mh2{display:flex;align-items:center;gap:10px;padding:16px 22px;border-bottom:1px solid var(--line);font-family:var(--display);font-size:15.5px;color:var(--navy)}
+.mh2 .mx{margin-left:auto;color:var(--muted);cursor:pointer;font-size:14px}
+.mnote{font-size:12.5px;color:var(--muted);line-height:1.6;padding:14px 22px 0}
+.mcounts{display:flex;gap:8px;padding:12px 22px 4px;flex-wrap:wrap}
+.cats{columns:2;column-gap:26px;padding:10px 22px 0}
+.cat{break-inside:avoid;margin-bottom:16px}
+.cat h6{font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:7px;border-bottom:1px solid var(--line-soft);padding-bottom:5px}
+.ck{display:flex;align-items:center;gap:9px;padding:5px 2px;font-size:12.8px;cursor:pointer;border-radius:6px}
+.ck:hover{background:var(--ice)}
+.ck input{accent-color:var(--navy);width:14px;height:14px;flex:none;cursor:pointer}
+.ck .cn{flex:1;color:var(--ink)}
+.tagL{font-size:9.5px;font-weight:600;background:var(--ice);color:var(--navy);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.tagA{font-size:9.5px;font-weight:600;background:var(--gold-soft);color:var(--gold-deep);border:1px solid #F0D9C0;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.cgroup{background:var(--ice);padding:8px 19px;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--line-soft)}
+
+/* ---------- 2b · add/remove checklist items ---------- */
+.ck{position:relative}
+.ck:hover::after{content:"✕";position:absolute;right:-2px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--bad);background:var(--bad-bg);border:1px solid #EBC6C6;border-radius:6px;padding:2px 6px;cursor:pointer}
+.ck.custom:hover::after{content:none}
+.ck.custom{background:#FDFBF7;border:1px dashed #E4D2B8;border-radius:8px;margin:2px 0}
+.cust2{font-style:normal;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold-deep);background:var(--gold-soft);border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:1px}
+.rm2{width:22px;height:22px;border-radius:6px;border:1px solid var(--line);background:var(--white);color:var(--muted);font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;margin-left:4px}
+.rm2:hover{border-color:#DE9C9C;color:var(--bad);background:var(--bad-bg)}
+.addrow{display:grid;grid-template-columns:1fr auto auto auto;gap:9px;margin:14px 22px 0;padding-top:16px;border-top:1px solid var(--line)}
+.addrow input,.addrow select{font-family:var(--body);font-size:12.5px;border:1.5px solid var(--line);border-radius:8px;padding:9px 11px;background:var(--white);color:var(--ink)}
+.addrow input:focus,.addrow select:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px var(--navy-100)}
+.addnote{margin:8px 22px 0;font-size:11.5px;color:var(--muted)}
+
+/* ---------- 7 · live extraction feed — black console ---------- */
+.logfeed{border:1px solid #232A45;border-radius:13px;overflow:hidden;background:#0B0E1A;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+.lf-head{display:flex;align-items:center;gap:10px;padding:12px 18px;background:#12172E;border-bottom:1px solid #232A45}
+.lf-head b{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12.5px;color:#E8EDFA;font-weight:600}
+.pulse{width:9px;height:9px;border-radius:50%;background:var(--gold);position:relative;flex:none}
+.pulse::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--gold);opacity:.5;animation:pw 1.6s ease-out infinite}
+@keyframes pw{from{transform:scale(.6);opacity:.6}to{transform:scale(1.5);opacity:0}}
+@media (prefers-reduced-motion:reduce){.pulse::after{animation:none;opacity:0}}
+.lf-head .live{font-size:10.5px;font-weight:700;letter-spacing:.12em;color:#F0A868}
+.lf-head .cnt{margin-left:auto;font-size:11px;color:#5D6FA5;font-family:ui-monospace,"SF Mono",Menlo,monospace}
+.lf-row{display:grid;grid-template-columns:64px 112px 1fr;gap:14px;padding:10px 18px;border-top:1px solid #1B2240;font-size:12.5px;align-items:center}
+.lf-row.new{background:#131A36;box-shadow:inset 3px 0 0 var(--gold)}
+.lf-t{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:10.5px;color:#6B7BA8;font-variant-numeric:tabular-nums}
+.lf-c{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;text-align:center;border-radius:999px;padding:3px 0;font-family:ui-monospace,"SF Mono",Menlo,monospace}
+.lf-c.cls{background:#22305E;color:#AEC2F0}
+.lf-c.ext{background:#3A2812;color:#F0A868}
+.lf-c.prv{background:#151C38;color:#9FB2D8;border:1px solid #2A3560}
+.lf-c.twn{background:#0F2E1D;color:#7FD6A4}
+.lf-c.aud{background:#1B2138;color:#8A93AD}
+.lf-d{color:#C9D3EC}
+.lf-d b{color:#FFFFFF}
+.lf-d .val{color:#F0A868;font-weight:700}
+.lf-d .src{background:#151C38;border-color:#2A3560;color:#9FB2D8}
+
+/* ---------- 8c · internal upload ---------- */
+.ctxrow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.ctxchip{display:inline-flex;align-items:center;gap:7px;font-size:12px;background:var(--ice);border:1px solid var(--line);border-radius:999px;padding:6px 13px;color:var(--navy)}
+.ctxchip b{font-weight:600}
+.drop2{border:1.5px dashed var(--line);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin:14px 0;background:#FCFDFF}
+.drop2 .fico{width:38px;height:38px;border-radius:10px;background:var(--ice);display:flex;align-items:center;justify-content:center;font-size:17px;flex:none}
+.drop2 .fmeta b{display:block;font-size:13.5px}
+.drop2 .fmeta span{font-size:12px;color:var(--muted)}
+.pipeprev{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11.5px;color:var(--muted);background:var(--ice);border-radius:10px;padding:9px 13px;margin-bottom:14px}
+.pipeprev .pp{background:var(--white);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-weight:600;color:var(--navy);font-size:11px}
+.pipeprev .pa{color:#9AA7C4}
+
+/* ---------- 10 · loan status tracker ---------- */
+.strack{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:18px}
+.sp2{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;border-radius:999px;padding:5px 12px;border:1px solid var(--line);color:var(--muted);background:var(--white)}
+.sp2.done{background:var(--ok-bg);border-color:#BFDCC9;color:var(--ok)}
+.sp2.cur{background:var(--gold-soft);border-color:#F0D9C0;color:var(--gold-deep);box-shadow:0 0 0 3px rgba(232,119,34,.12)}
+.sp2.stop{background:var(--bad-bg);border-color:#EBC6C6;color:var(--bad)}
+.sarr{color:#B9C4DB;font-size:11px}
+.mailcta2{display:flex;gap:12px;margin:18px 0 8px}
+.mailcta2 a{flex:1;text-align:center;font-weight:600;font-size:13.5px;border-radius:10px;padding:12px;text-decoration:none}
+.mailcta2 .go{background:var(--ok);color:#fff}
+.mailcta2 .no{background:var(--white);color:var(--bad);border:1.5px solid #DE9C9C}
+
+.strackbar{padding:16px 26px 0}
+.strackbar .strack{margin-bottom:0}
+
+/* ---------- 2 · rich dashboard ---------- */
+.searchbar{display:flex;gap:10px;margin-bottom:20px}
+.searchbar input{flex:1;font-family:var(--body);font-size:13.5px;border:1.5px solid var(--line);border-radius:10px;padding:11px 15px;background:var(--white)}
+.searchbar input:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px var(--navy-100)}
+.statstrip{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:12px;color:var(--muted);margin:-8px 0 20px}
+.statstrip b{color:var(--navy)}
+.dgrid{display:grid;grid-template-columns:2fr 1fr;gap:20px;align-items:start}
+.segbar{display:flex;height:12px;border-radius:99px;overflow:hidden;margin:6px 0 12px}
+.segbar i{display:block;height:100%}
+.seglegend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--muted)}
+.seglegend .sd{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-1px}
+.railp{border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:16px}
+.railp h5{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.attn{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--line-soft);font-size:12.5px}
+.attn:first-of-type{border-top:none;padding-top:0}
+.attn .adot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:4px}
+.attn .at{flex:1}
+.attn .at b{display:block;font-size:12.5px}
+.attn .at span{color:var(--muted);font-size:11.5px}
+.attn a{font-size:11.5px;font-weight:600;color:var(--navy);text-decoration:none;white-space:nowrap;border:1px solid var(--line);border-radius:7px;padding:4px 9px}
+.attn a:hover{background:var(--ice)}
+.wkrow{display:grid;grid-template-columns:34px 1fr;gap:10px;padding:8px 0;border-top:1px solid var(--line-soft);font-size:12.5px}
+.wkrow:first-of-type{border-top:none;padding-top:0}
+.wkrow .wd{font-weight:700;color:var(--navy);font-size:11.5px;background:var(--ice);border-radius:7px;text-align:center;padding:4px 0;height:fit-content}
+.wkrow span{color:var(--muted);font-size:11.5px;display:block}
+.pulse2{display:flex;align-items:baseline;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line-soft);font-size:12.5px}
+.pulse2:first-of-type{border-top:none;padding-top:0}
+.pulse2 b{font-family:var(--display);font-size:16px;color:var(--navy)}
+.compbar{height:7px;border-radius:99px;background:var(--line-soft);overflow:hidden;margin:6px 0 2px}
+.compbar i{display:block;height:100%;width:96%;background:var(--ok);border-radius:99px}
+
+/* ---------- 2 · workspace tabs ---------- */
+.wtabs{display:flex;gap:2px;border-bottom:1px solid var(--line);padding:0 30px;background:#FCFDFF;overflow-x:auto}
+.wtab{padding:12px 15px;font-size:13px;color:var(--muted);border-bottom:2.5px solid transparent;font-weight:500;text-decoration:none;white-space:nowrap}
+.wtab:hover{color:var(--navy)}
+.wtab.on{color:var(--navy);border-color:var(--gold);font-weight:600}
+.wtab .bcount{font-size:10.5px;font-weight:700;background:var(--gold);color:#fff;border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:1px}
+
+@media (max-width:880px){
+  .stepnav{display:none}
+  .login{grid-template-columns:1fr}
+  .metrics{grid-template-columns:1fr 1fr}
+  .dgrid{grid-template-columns:1fr}
+  .fgrid{grid-template-columns:1fr}
+  .terminal{grid-template-columns:1fr}
+  .shead{flex-wrap:wrap}
+  .shead .req{margin-left:0}
+  .review{grid-template-columns:1fr}
+  .flist{border-right:none;border-bottom:1px solid var(--line)}
+  .decide,.handoff{grid-template-columns:1fr}
+  .bt-grid{grid-template-columns:1fr}
+  .cats{columns:1}
+  .addrow{grid-template-columns:1fr 1fr}
+  .lf-row{grid-template-columns:56px 1fr;grid-auto-flow:dense}
+  .lf-row .lf-d{grid-column:1/-1}
+  .ind{grid-template-columns:1fr 1fr}
+  .stages{grid-template-columns:repeat(2,1fr);gap:14px 0}
+  .stage::before{display:none}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+
+<style>
+/* ---------- intake role silos ---------- */
+.chain{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin:26px 0 8px}
+.rp{display:inline-flex;flex-direction:column;align-items:center;gap:2px;border:1.5px solid var(--line);border-radius:12px;padding:10px 18px;background:var(--white);min-width:118px}
+.rp b{font-size:12.5px;color:var(--navy)}
+.rp span{font-size:10.5px;color:var(--muted);letter-spacing:.04em}
+.rp.o{border-color:#F0D9C0;background:#FFFDFA}.rp.c{border-color:var(--navy-100)}.rp.r{border-color:#DFD0F0;background:#FBF8FE}
+.rp.k{border-color:#EBD9B4;background:#FFFEF9}.rp.a{border-color:#BFDCC9;background:#FBFEFC}
+.charr{color:#B9C4DB;font-size:15px}
+.loopnote{text-align:center;font-size:12px;color:var(--gold-deep);margin-bottom:6px}
+.silo{border-left:5px solid var(--line);border-radius:18px;padding:30px 28px 32px;margin:54px 0 0;border:1px solid var(--line);border-left-width:5px}
+.silo.o{border-left-color:var(--gold);background:#FFF9F2;border-color:#F3E3CE;border-left-color:var(--gold)}
+.silo.c{border-left-color:var(--navy);background:#F3F7FD;border-color:#D9E4F4;border-left-color:var(--navy)}
+.silo.r{border-left-color:#6E4B9E;background:#F8F4FC;border-color:#E4D6F2;border-left-color:#6E4B9E}
+.silo.k{border-left-color:#D9A441;background:#FDF9EE;border-color:#EFE3C4;border-left-color:#D9A441}
+.silo.a{border-left-color:var(--ok);background:#F2FAF5;border-color:#CFE8D8;border-left-color:var(--ok)}
+.silo .frame{box-shadow:0 18px 44px -28px rgba(16,28,66,.22)}
+.rhead{display:flex;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.rtag{font-family:var(--display);font-weight:700;font-size:12px;letter-spacing:.08em;border-radius:9px;padding:7px 13px;white-space:nowrap}
+.rtag.o{background:var(--gold-soft);color:var(--gold-deep)}.rtag.c{background:var(--navy);color:#fff}
+.rtag.r{background:#EDE3F8;color:#6E4B9E}.rtag.k{background:var(--warn-bg);color:var(--warn)}
+.rtag.a{background:var(--ok-bg);color:var(--ok)}
+.rhead h2{font-family:var(--display);font-weight:600;font-size:22px;color:var(--navy)}
+.rhead .actor{font-size:12.5px;color:var(--muted);margin-top:2px}
+.rio{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.iochip{font-size:11px;font-weight:600;border:1px solid var(--line);border-radius:999px;padding:4px 11px;color:var(--muted);background:var(--white)}
+.iochip b{color:var(--navy)}
+.mandate{max-width:78ch;color:var(--muted);font-size:13.5px;margin-bottom:20px;line-height:1.6}
+.handoff{display:flex;align-items:center;gap:12px;justify-content:center;margin:34px 0 -14px;color:var(--muted);font-size:12px}
+.handoff .hline{flex:1;max-width:180px;height:1px;background:var(--line)}
+.handoff b{color:var(--navy)}
+.qbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.qcard{flex:1;min-width:120px;background:var(--ice);border-radius:10px;padding:10px 14px}
+.qcard .k{font-size:11px;color:var(--muted)}
+.qcard .v{font-family:var(--display);font-weight:700;font-size:19px;color:var(--navy)}
+.asel{font-family:var(--body);font-size:12px;border:1.5px solid var(--line);border-radius:8px;padding:6px 9px;background:var(--white);color:var(--navy);font-weight:600}
+</style>
+</head>
+<body>
+
+<nav class="topbar" aria-label="Roles">
+  <div class="wrap">
+    <div class="brandline">
+      <span class="mark" aria-hidden="true">
+        <svg width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#3A4D96" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 0 1 29.5 17" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+      </span>
+      <div><div class="name">Freedom Bank</div><div class="tag">INTAKE WORKFLOW · ROLE-BASED VIEW</div></div>
+    </div>
+    <div class="stepnav">
+      <a href="#r1"><span class="n">1</span>Owner</a>
+      <a href="#r2"><span class="n">2</span>Coordinator</a>
+      <a href="#r3"><span class="n">3</span>Reviewer</a>
+      <a href="#r4"><span class="n">4</span>Checker</a>
+      <a href="#r5"><span class="n">5</span>Approver</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Credit File Server 2.0 · Intake stage</div>
+    <h1>Intake as a role-based workflow</h1>
+    <p>The intake stage segregated into five accountable roles. Four are workspace roles with their own screens and queues; the applicant participates by secure email alone — no login, no application access. Every document still ends in the same place: verified, twinned, and committed to the Credit File Server.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="chain" aria-label="Role chain">
+    <span class="rp o"><b>1 · Intake Owner</b><span>APPLICANT</span></span><span class="charr">→</span>
+    <span class="rp c"><b>2 · Coordinator</b><span>INITIATE &amp; VALIDATE</span></span><span class="charr">→</span>
+    <span class="rp r"><b>3 · Reviewer</b><span>OWN PACKAGE · ASSIGN</span></span><span class="charr">→</span>
+    <span class="rp k"><b>4 · Checker</b><span>MISSING &amp; INVALID</span></span><span class="charr">→</span>
+    <span class="rp a"><b>5 · Approver</b><span>COMMIT TO SERVER</span></span>
+  </div>
+  <p class="loopnote">⟲ Re-request loop: the Checker sends findings straight to the Owner as a secure re-request; the Coordinator tracks completeness — missing or invalid documents never move forward silently.</p>
+</div>
+
+<div class="wrap" style="margin-top:34px">
+  <div class="bt-card">
+    <h6>Screen hierarchy — what each role sees</h6>
+    <table class="xtable" style="font-size:12.5px">
+      <thead><tr><th style="width:17%">Role</th><th style="width:22%">Workspace tabs</th><th style="width:33%">Screens</th><th>Key actions</th></tr></thead>
+      <tbody>
+        <tr style="background:#FFFDFA"><td><b>Intake Owner</b><br><span style="color:var(--muted);font-size:11.5px">applicant · no login</span></td><td style="color:var(--muted)">— none —</td><td style="font-size:12px">Email touchpoints only: secure request email → one-time upload link → re-request email → confirmation email</td><td style="font-size:12px">Upload · re-upload on findings · respond</td></tr>
+        <tr><td><b>Intake Coordinator</b></td><td style="font-size:12px">My queue · Applications</td><td style="font-size:12px">Applications dashboard (new-request form · recent requests) → Application detail (completeness) → Customer touchpoints (secure email · upload portal · outcomes)</td><td style="font-size:12px">Create request · validate details · send / resend · monitor customer view</td></tr>
+        <tr><td><b>Intake Reviewer</b></td><td style="font-size:12px">My queue · Applications · Parking bay</td><td style="font-size:12px">Package board → Assignment detail → SLA tracker → <b>Checklist settings</b> (package defaults)</td><td style="font-size:12px">Accept package · assign checks · track returns · <b>configure checklist</b></td></tr>
+        <tr><td><b>Intake Checker</b></td><td style="font-size:12px">My queue · Findings</td><td style="font-size:12px">Check task view → Validation matrix → Findings composer → <b>Notifications</b> (re-request · reminders)</td><td style="font-size:12px">Validate · flag invalid · list missing · <b>send re-request notification</b></td></tr>
+        <tr><td><b>Intake Approver</b></td><td style="font-size:12px">Approvals · Parking bay</td><td style="font-size:12px"><b>Intake dashboard</b> (stage-wide oversight) → Approval gate → Commit summary → Handoff view → <b>Notifications</b> (confirmation · commit)</td><td style="font-size:12px">Oversee stage · verify role trail · approve · commit · <b>send confirmation</b></td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12px;color:var(--muted);margin-top:10px;margin-bottom:0">Visibility is strictly role-scoped: each role's tabs and screens are the full extent of what they can open. The applicant appears in the hierarchy only as an email recipient — the checklist they receive and every notification they get are configured and sent from the Coordinator's screens below.</p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ================= R1 · INTAKE OWNER ================= -->
+  <section class="silo o" id="r1">
+    <div class="rhead">
+      <span class="rtag o">ROLE 1 · INTAKE OWNER</span>
+      <div><h2>The applicant</h2><div class="actor">Priya Sharma · Meridian Logistics LLC · REQ-2026-0847</div></div>
+      <div class="rio"><span class="iochip">In: <b>secure email link</b></span><span class="iochip">Out: <b>uploaded documents</b></span><span class="iochip">Loop: <b>re-upload on findings</b></span></div>
+    </div>
+    <p class="mandate">Applies for the loan and owns the response: opening the verified link, uploading against the checklist, and re-uploading when the Checker's findings come back. The Owner has no login and never sees internal roles or stages — every interaction arrives by verified email with a one-time link.</p>
+    <div class="bt-card" style="background:#FFFDFA;border-color:#F0D9C0">
+      <h6>No application login — email touchpoints only</h6>
+      <div class="ent"><span class="edot" style="background:var(--gold)"></span><b>Secure request email</b><span class="etag">FBV-branded · lists the 12 Lender items · one-time scoped link</span></div>
+      <div class="ent"><span class="edot" style="background:var(--gold)"></span><b>One-time upload link</b><span class="etag">session-guarded portal · no account, no password</span></div>
+      <div class="ent"><span class="edot" style="background:var(--gold)"></span><b>Re-request email</b><span class="etag">carries the Checker's finding verbatim · fresh single-purpose link</span></div>
+      <div class="ent"><span class="edot" style="background:var(--gold)"></span><b>Confirmation email</b><span class="etag">issued by the Approver on commit · "the FBOV team will reach out"</span></div>
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 0">Everything the applicant sees originates from the Coordinator's screens — the checklist from their profile configuration, every notification from their outbox. The applicant is a role in the workflow, not a user of the application.</p>
+    </div>
+  </section>
+
+  <div class="handoff"><span class="hline"></span> uploads land with the <b>Coordinator</b> <span class="hline"></span></div>
+
+  <!-- ================= R2 · COORDINATOR ================= -->
+  <section class="silo c" id="r2">
+    <div class="rhead">
+      <span class="rtag c">ROLE 2 · INTAKE COORDINATOR</span>
+      <div><h2>Engage · initiate · validate completeness</h2><div class="actor">D. Whitfield · Commercial banking</div></div>
+      <div class="rio"><span class="iochip">In: <b>application</b></span><span class="iochip">Out: <b>complete package → Reviewer</b></span><span class="iochip">Loop: <b>re-requests to Owner</b></span></div>
+    </div>
+    <p class="mandate">The customer's single point of contact. Creates the request with the validated applicant form, sends the secure link from the Reviewer-configured checklist, and watches every recent request in one queue. The applicant-facing surfaces — the secure email, the upload portal, and the confirmation states — are held by this role: the applicant has no login, so everything they see originates and is monitored here. Nothing advances to the Reviewer until the application is complete.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/intake/coordinator</div>
+        <span class="badge info">Coordinator · D. Whitfield</span>
+      </div>
+      <nav class="wtabs" aria-label="Workspace"><a class="wtab" href="#">My queue</a><a class="wtab on" href="#">Applications</a><a class="wtab" href="#">Parking bay</a><a class="wtab" href="#">Findings</a><a class="wtab" href="#">Approvals</a></nav>
+      <div class="xwrap">
+        <div class="qbar">
+          <div class="qcard"><div class="k">Applications in intake</div><div class="v">6</div></div>
+          <div class="qcard"><div class="k">Awaiting customer</div><div class="v">3</div></div>
+          <div class="qcard"><div class="k">Re-requests open</div><div class="v" style="color:var(--gold-deep)">1</div></div>
+          <div class="qcard"><div class="k">Ready for Reviewer</div><div class="v" style="color:var(--ok)">2</div></div>
+        </div>
+        <div class="panel" style="margin-bottom:14px">
+          <div class="phead"><h4>New document request · applicant details</h4><span class="note">all fields verified before send</span></div>
+          <div class="fgrid">
+            <div class="field ok"><label>Borrower name</label><input type="text" value="Priya Sharma"><div class="hint ok"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 4.5l-7 7L3 8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg> Looks good</div></div>
+            <div class="field bad"><label>Phone</label><input type="tel" value="703-55-019"><div class="hint bad"><svg width="13" height="13" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v3.5M8 11h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg> Enter a valid 10-digit phone number</div></div>
+            <div class="field ok"><label>Email</label><input type="email" value="priya@meridianlogistics.com"><div class="hint ok"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 4.5l-7 7L3 8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg> Deliverable address · domain verified</div></div>
+            <div class="field ok"><label>Company name</label><input type="text" value="Meridian Logistics LLC"><div class="hint ok"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 4.5l-7 7L3 8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg> Matches state registry</div></div>
+          </div>
+          <div class="factions">
+            <button class="btn primary">Send secure request</button>
+            <button class="btn ghost">Save draft</button>
+            <span class="note">🔒 Emails the applicant using the Reviewer-configured checklist — 12 Lender items</span>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:14px">
+          <div class="phead"><h4>Recent requests</h4><span class="note">resend available until package completes</span></div>
+          <div class="rrow"><div class="who2"><b>Priya Sharma</b> · <span class="co">Meridian Logistics LLC</span></div><span class="badge info">9 of 12 · re-request open</span><button class="btn ghost">Detail</button></div>
+          <div class="rrow"><div class="who2"><b>Marcus Lee</b> · <span class="co">Harbor Point Dental PC</span></div><span class="badge ok">Complete · with Reviewer</span><button class="btn ghost">View package</button></div>
+          <div class="rrow"><div class="who2"><b>Elena Ortiz</b> · <span class="co">Blue Ridge Catering Co.</span></div><span class="badge warn">Link expired · no upload</span><button class="btn navy">Resend</button></div>
+        </div>
+
+        <div class="bt-card" style="margin-bottom:14px">
+          <h6>REQ-2026-0847 · application completeness</h6>
+          <div class="ent"><span class="edot" style="background:var(--ok)"></span><b>Applicant details validated</b><span class="etag">name · phone · email · company — registry matched</span></div>
+          <div class="ent"><span class="edot" style="background:var(--ok)"></span><b>Secure request sent</b><span class="etag">12 Lender items · from configured checklist · Aug 1</span></div>
+          <div class="ent"><span class="edot" style="background:var(--gold)"></span><b>Documents received 9 of 12</b><span class="etag">1 re-request open · 2 outstanding · reminder Aug 6</span></div>
+          <div class="ent"><span class="edot" style="background:#C6D1E6"></span><b>Hand to Reviewer</b><span class="etag">unlocks at 12 of 12 received</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="btn primary">Resend reminder</button>
+          <button class="btn ghost">View re-request status</button>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted)">Re-request notifications are owned and sent by the Checker</span>
+        </div>
+      </div>
+    </div>
+  
+    
+  
+    <p style="font-family:var(--display);font-weight:600;font-size:15.5px;color:var(--navy);margin:26px 0 12px">Customer-facing screens — held by this role · the applicant has no login</p><p class="mandate" style="margin-top:-6px">These are the full screens from the main flow in the Coordinator’s custody: the initial secure email they send, the upload portal their link opens, and both session outcomes. Re-request emails arrive from the Checker and the completion confirmation from the Approver — but the applicant relationship stays anchored here.</p>
+
+    <p style="font-family:var(--display);font-weight:600;font-size:15.5px;color:var(--navy);margin:26px 0 12px">✉️ Secure request email — the applicant’s inbox</p><div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar">Inbox — Documents needed to begin your loan application</div>
+        <span class="badge ok">Verified sender · DKIM pass</span>
+      </div>
+      <div class="mailwrap">
+        <div class="mail">
+          <div class="mhead">
+            <div><b>From:</b> Freedom Bank of Virginia &lt;requests@freedombankva.com&gt;</div>
+            <div><b>To:</b> priya@meridianlogistics.com</div>
+            <div><b>Subject:</b> Documents needed to begin your loan application</div>
+          </div>
+          <div class="band">
+            <span class="mark" aria-hidden="true">
+              <svg width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#3A4D96" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 0 1 29.5 17" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+            </span>
+            <div>
+              <div class="bn">Freedom Bank of Virginia</div>
+              <div class="bt">Secure document request</div>
+            </div>
+          </div>
+          <div class="mbody">
+            <p>Dear Ms. Sharma,</p>
+            <p>Thank you for choosing Freedom Bank of Virginia for <b>Meridian Logistics LLC</b>. To begin processing your commercial loan application, we need the following documents for this cycle:</p>
+            <div class="doclist"><div class="di">Required documents · 12</div><div class="di">📄 Corporate Resolution</div><div class="di">📄 Articles of Incorporation / Certified Bylaws</div><div class="di">📄 Operating Agreement (LLC)</div><div class="di">📄 Certificate of Organization (LLC)</div><div class="di">📄 Personal Financial Statements</div><div class="di">📄 Personal Tax Returns</div><div class="di">📄 Corporate Financial Statements</div><div class="di">📄 Corporate Tax Returns</div><div class="di">📄 Loan Presentation / Submission</div><div class="di">📄 Risk Rating Form</div><div class="di">📄 Commitment Letter</div><div class="di">📄 Property Description</div></div>
+            <p>Upload them through our secure portal. The link below is unique to you, works for this request only, and expires in 7 days.</p>
+            <a class="cta" href="#s4">Log in to upload securely</a>
+            <div class="expiry">Link expires Aug 15, 2026 · single-purpose · encrypted</div>
+            <p style="font-size:12.5px;color:var(--muted)">If you didn't expect this email, contact your relationship manager directly. Freedom Bank will never ask for your password or one-time codes by email.</p>
+            <div class="sig">
+              Warm regards,<br>
+              <b>Commercial Lending Team</b><br>
+              Freedom Bank of Virginia · 10555 Main St., Fairfax, VA
+            </div>
+          </div>
+          <div class="mfoot">This message was sent by the Freedom Bank secure platform. Member FDIC · Equal Housing Lender. Please do not reply to this address; replies are not monitored.</div>
+        </div>
+      </div>
+    </div>
+
+    <p style="font-family:var(--display);font-weight:600;font-size:15.5px;color:var(--navy);margin:26px 0 12px">📤 Upload portal — checklist · parking bay · session guard</p><div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> upload.freedombankva.com/r/7f3a…c91</div>
+        <span class="badge ok">Session encrypted</span>
+      </div>
+      <div class="portal">
+        <div class="phead2">
+          <span class="mark" aria-hidden="true">
+            <svg width="36" height="36" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#DCE5F4" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 0 1 29.5 17" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+          </span>
+          <div>
+            <h3>Document upload — Meridian Logistics LLC</h3>
+            <div class="sub2">Commercial loan application · requested Aug 1 by Freedom Bank</div>
+          </div>
+          <div class="timer" role="timer" aria-label="Session time remaining 14 minutes 32 seconds">
+            <span class="mark" aria-hidden="true">
+              <svg width="30" height="30" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#DCE5F4" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 1 1 5.5 22" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+            </span>
+            <div><div class="t">14:32</div><div class="tl">Session remaining</div></div>
+          </div>
+        </div>
+
+        <div class="bay">📦 <span><b>Temporary parking bay:</b> your files are held securely here until the FBOV team reviews them — nothing is filed to your credit record yet.</span></div>
+
+        <div class="check"><div class="cgroup">Organizational / financial</div><div class="ci"><span class="tick wait" aria-hidden="true"></span><div><div class="nm">Corporate Resolution</div><div class="ds">Executed resolution authorizing the borrowing</div></div><button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button></div><div class="ci"><span class="tick wait" aria-hidden="true"></span><div><div class="nm">Articles of Incorporation / Certified Bylaws</div><div class="ds">Certified copies as filed</div></div><button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button></div><div class="ci"><span class="tick wait" aria-hidden="true"></span><div><div class="nm">Operating Agreement (LLC)</div><div class="ds">Current agreement including all amendments</div></div><button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button></div><div class="ci"><span class="tick wait" aria-hidden="true"></span><div><div class="nm">Certificate of Organization (LLC)</div><div class="ds">State-issued certificate</div></div><button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button></div><div class="ci"><span class="tick done" aria-hidden="true">✓</span><div><div class="nm">Personal Financial Statements</div><div class="ds">Sharma-PFS-2026.pdf · 0.8 MB · uploaded 2:41 PM</div></div><span class="badge ok">In parking bay</span></div><div class="ci"><span class="tick wait" aria-hidden="true"></span><div><div class="nm">Personal Tax Returns</div><div class="ds">Last 2 years · complete with schedules</div></div><button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button></div><div class="ci"><span class="tick done" aria-hidden="true">✓</span><div><div class="nm">Corporate Financial Statements</div><div class="ds">Meridian-FY24-25-Financials.xlsx · 1.8 MB · uploaded 2:44 PM</div></div><span class="badge ok">In parking bay</span></div><div class="ci"><span class="tick load" aria-hidden="true">↑</span><div><div class="nm">Corporate Tax Returns</div><div class="ds">Meridian-Returns-2024-2025.pdf · 12.6 MB · uploading…</div><div class="bar"><i></i></div></div><span class="badge warn">64%</span></div><div class="cgroup">Initial loan documents</div><div class="ci"><span class="tick wait" aria-hidden="true"></span><div><div class="nm">Loan Presentation / Submission</div><div class="ds">As provided by your relationship manager</div></div><button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button></div><div class="ci"><span class="tick wait" aria-hidden="true"></span><div><div class="nm">Risk Rating Form</div><div class="ds">Signed form from your application packet</div></div><button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button></div><div class="cgroup">Commitments for financing</div><div class="ci"><span class="tick wait" aria-hidden="true"></span><div><div class="nm">Commitment Letter</div><div class="ds">Countersigned copy</div></div><button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button></div><div class="cgroup">Appraisals</div><div class="ci"><span class="tick wait" aria-hidden="true"></span><div><div class="nm">Property Description</div><div class="ds">Legal description of the subject property</div></div><button class="btn ghost" style="padding:7px 14px;font-size:12.5px">Choose file</button></div></div>
+
+        <div class="fraud">
+          <span class="fi" aria-hidden="true">⚠️</span>
+          <div>
+            <b>Session guard is active.</b>
+            <p>Unusual activity — automated tooling, location jumps, repeated failed uploads — ends the session immediately and notifies your relationship manager. Your saved uploads are kept.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p style="font-family:var(--display);font-weight:600;font-size:15.5px;color:var(--navy);margin:26px 0 12px">🏁 Session outcomes — completion &amp; fraud guard</p><div class="terminal">
+      <div class="tcard good">
+        <div class="ico" aria-hidden="true" style="font-size:26px">✓</div>
+        <h4>Thanks for uploading</h4>
+        <p>All requested documents are in the secure parking bay. The <b>FBOV team will review them and reach out</b> with next steps on your application.</p>
+        <p style="font-size:12.5px">Reference <b>REQ-2026-0847</b></p>
+        <div class="fine">✉️ Confirmation email sent to priya@meridianlogistics.com from the platform</div>
+      </div>
+      <div class="tcard stop">
+        <div class="ico" aria-hidden="true" style="font-size:24px">✕</div>
+        <h4>Session ended — unusual activity detected</h4>
+        <p>For your protection this upload session was closed. Documents already uploaded are safe in the parking bay.</p>
+        <p style="font-size:12.5px">Your relationship manager has been notified and will contact you to continue securely.</p>
+        <div class="fine">🛡️ Event logged · banker alerted · link deactivated</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="handoff"><span class="hline"></span> complete package transfers to the <b>Reviewer</b> <span class="hline"></span></div>
+
+  <!-- ================= R3 · REVIEWER ================= -->
+  <section class="silo r" id="r3">
+    <div class="rhead">
+      <span class="rtag r">ROLE 3 · INTAKE REVIEWER</span>
+      <div><h2>Own the package · assign the work</h2><div class="actor">S. Okafor · Intake operations lead</div></div>
+      <div class="rio"><span class="iochip">In: <b>complete package</b></span><span class="iochip">Out: <b>assigned check tasks</b></span><span class="iochip">SLA: <b>24h to assign</b></span></div>
+    </div>
+    <p class="mandate">Accountable for the document package from acceptance to approval — including the checklist itself: the Reviewer configures the default package that every Coordinator request uses. Splits the package into check tasks, assigns each to a Checker with a due time, and tracks returns — the single name on the hook if intake stalls.</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/intake/reviewer/REQ-2026-0847</div>
+        <span class="badge info">Package owner · S. Okafor</span>
+      </div>
+      <nav class="wtabs" aria-label="Workspace"><a class="wtab on" href="#">My queue</a><a class="wtab" href="#">Applications</a><a class="wtab" href="#">Parking bay</a><a class="wtab" href="#">Findings</a><a class="wtab" href="#">Approvals</a></nav>
+      <div class="xwrap">
+        <div class="xtop"><h4>Package REQ-2026-0847 · 12 documents</h4><span class="badge warn" style="margin-left:auto">8 assigned · 4 unassigned</span></div>
+        <table class="xtable" style="font-size:12.5px">
+          <thead><tr><th>Document</th><th>Assign to</th><th>Due</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td><b>Corporate Financial Statements</b></td><td><select class="asel"><option>A. Rivera · Checker</option><option>M. Chen · Checker</option></select></td><td>Today 4 PM</td><td><span class="badge ok">Returned · valid</span></td></tr>
+            <tr><td><b>Operating Agreement (LLC)</b></td><td><select class="asel"><option>A. Rivera · Checker</option><option>M. Chen · Checker</option></select></td><td>Today 4 PM</td><td><span class="badge bad">Returned · invalid</span></td></tr>
+            <tr><td><b>Personal Financial Statements</b></td><td><select class="asel"><option>M. Chen · Checker</option><option>A. Rivera · Checker</option></select></td><td>Today 5 PM</td><td><span class="badge info">In check</span></td></tr>
+            <tr><td><b>Corporate Tax Returns</b></td><td><select class="asel"><option>Unassigned</option><option>A. Rivera · Checker</option><option>M. Chen · Checker</option></select></td><td>—</td><td><span class="badge warn">Unassigned</span></td></tr>
+          </tbody>
+        </table>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+          <button class="btn primary">Assign remaining · balance workload</button>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted)">Assignments and returns are audit-logged per document</span>
+        </div>
+      </div>
+    </div>
+  
+    <div class="frame" style="margin-top:20px">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/intake/reviewer/settings/checklist</div>
+        <span class="badge info">Checklist owned by the Reviewer · S. Okafor</span>
+      </div>
+      <div class="xwrap">
+        <div class="xtop">
+          <h4>Reviewer settings — document request checklist</h4>
+          <span class="badge info" style="margin-left:auto">Opened from the avatar menu · SO</span>
+        </div>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px">Settings › <b style="color:var(--navy)">Document checklist</b> · Notifications · Signature · Security</div>
+        <div class="modal" style="box-shadow:none;border:1px solid var(--line);max-width:none">
+          <div class="mh2"><span aria-hidden="true">⚙️</span><b>Default document checklist</b></div>
+          <p class="mnote">Select which documents the Coordinator's secure requests include by default. Selected items join the internal checklist either way — but only "Lender" items are ever shown to the customer through the link; "Loan Admin" items stay internal (title, UCC, appraisal, insurance, etc.).</p>
+          <div class="mcounts">
+            <span class="badge info">28 selected</span>
+            <span class="badge ok">12 customer-facing · Lender</span>
+            <span class="badge warn">16 internal · Loan Admin</span>
+          </div>
+          <div class="cats"><div class="cat"><h6>Organizational documents / financial info</h6><label class="ck"><input type="checkbox" checked><span class="cn">Corporate Resolution</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Certificate of Good Standing</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Articles of Incorporation / Certified Bylaws</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Operating Agreement (LLC)</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Certificate of Organization (LLC)</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox"><span class="cn">Certificate of Fact</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Partnership Agreement</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox"><span class="cn">Certificate of Limited Partnership</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Personal Financial Statements</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Personal Tax Returns</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Corporate Financial Statements</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Corporate Tax Returns</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Credit Bureau Report — Personal</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Credit Bureau Report — Corporate</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Identification Verification</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">OFAC Verification</span><span class="tagA">Loan Admin</span></label><label class="ck custom"><input type="checkbox" checked><span class="cn">Franchise Agreement<em class="cust2">custom</em></span><span class="tagA">Loan Admin</span><span class="rm2" role="button" aria-label="Remove Franchise Agreement">✕</span></label></div><div class="cat"><h6>Initial loan documents</h6><label class="ck"><input type="checkbox" checked><span class="cn">Loan Presentation / Submission</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Risk Rating Form</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox"><span class="cn">Borrower's Request for Financing / Loan Application Package</span><span class="tagL">Lender</span></label></div><div class="cat"><h6>Commitments for financing</h6><label class="ck"><input type="checkbox" checked><span class="cn">Commitment Letter</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox"><span class="cn">Lender's Letter of Instructions</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">DDA Account Information</span><span class="tagL">Lender</span></label></div><div class="cat"><h6>Security documents</h6><label class="ck"><input type="checkbox" checked><span class="cn">Deed of Trust Note</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Deed of Trust</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Assignment of Leases & Rents</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Guaranty Agreement</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Indemnity Agreement (Hazardous Waste)</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Security Agreement</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Subordination Agreement</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">UCC Lien Search</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Financing Statements (County/State)</span><span class="tagA">Loan Admin</span></label></div><div class="cat"><h6>Title insurance</h6><label class="ck"><input type="checkbox" checked><span class="cn">Title Policy</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Title Binder or Commitment</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Insured's Closing Letter</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Covenants, Restrictions & Easements</span><span class="tagA">Loan Admin</span></label></div><div class="cat"><h6>Correspondence</h6><label class="ck"><input type="checkbox"><span class="cn">Funding Sheets</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Attorney Correspondence</span><span class="tagA">Loan Admin</span></label></div><div class="cat"><h6>Appraisals</h6><label class="ck"><input type="checkbox" checked><span class="cn">Appraisal Report</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Property Description</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Appraisal Review Sheet</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Flood Certification / Zone Location</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Fire Hazard Insurance</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox" checked><span class="cn">Liability Insurance</span><span class="tagA">Loan Admin</span></label><label class="ck"><input type="checkbox"><span class="cn">Workman's Compensation</span><span class="tagA">Loan Admin</span></label></div><div class="cat"><h6>Surveys</h6><label class="ck"><input type="checkbox"><span class="cn">Recorded Plat of Survey</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox"><span class="cn">Resubdivision Plat</span><span class="tagL">Lender</span></label><label class="ck"><input type="checkbox"><span class="cn">Site / House Plans</span><span class="tagL">Lender</span></label></div></div>
+          <div class="addrow">
+            <input type="text" placeholder="Add a checklist item — e.g. Accounts Receivable Aging Report">
+            <select><option>Organizational / financial</option><option>Initial loan documents</option><option>Commitments</option><option>Security documents</option><option>Title insurance</option><option>Correspondence</option><option>Appraisals</option><option>Surveys</option></select>
+            <select><option>Lender · customer-facing</option><option>Loan Admin · internal</option></select>
+            <button class="btn navy" style="padding:9px 16px;font-size:12.5px">+ Add item</button>
+          </div>
+          <p class="addnote">Hover any item to remove it from your configuration · custom items are saved to your profile. Master templates remain with credit admin — your changes never touch them.</p>
+          <button class="btn navy" style="width:100%;margin-top:14px;width:calc(100% - 44px);margin-left:22px">Save configuration</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="handoff"><span class="hline"></span> assigned tasks reach each <b>Checker's queue</b> <span class="hline"></span></div>
+
+  <!-- ================= R4 · CHECKER ================= -->
+  <section class="silo k" id="r4">
+    <div class="rhead">
+      <span class="rtag k">ROLE 4 · INTAKE CHECKER</span>
+      <div><h2>Find what's missing · flag what's invalid</h2><div class="actor">A. Rivera · Document control</div></div>
+      <div class="rio"><span class="iochip">In: <b>check tasks</b></span><span class="iochip">Out: <b>findings → Reviewer &amp; Coordinator</b></span></div>
+    </div>
+    <p class="mandate">Works the checklist against reality: confirms each received document is the right one, current, and complete — and names exactly what's missing or invalid. Findings are written once and travel verbatim into the Coordinator's re-request email.</p>
+    <p style="font-family:var(--display);font-weight:600;font-size:15.5px;color:var(--navy);margin:0 0 12px">🔍 Validate each document — parking bay workbench</p>
+    <div class="frame" style="margin-top:6px">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/intake/checker/REQ-2026-0847/validate</div>
+        <span class="badge info">Checker · A. Rivera</span>
+      </div>
+      
+      <nav class="wtabs" aria-label="Workspace"><a class="wtab on" href="#">My queue</a><a class="wtab" href="#">Applications</a><a class="wtab" href="#">Parking bay</a><a class="wtab" href="#">Findings</a><a class="wtab" href="#">Approvals</a></nav>
+      <div class="review">
+        <aside class="flist">
+          <div class="lt">Assigned check tasks · 5 received + 2 missing</div>
+          <div class="frow"><span class="fic">📄</span><div class="fn"><b>Sharma-PFS-2026.pdf</b><span>Personal Financial Statements · 0.8 MB</span></div><span class="stat ok" title="Approved"></span></div>
+          <div class="frow sel"><span class="fic">📊</span><div class="fn"><b>Meridian-FY24-25-Financials.xlsx</b><span>Corporate Financial Statements · 1.8 MB</span></div><span class="stat run" title="In review"></span></div>
+          <div class="frow"><span class="fic">📄</span><div class="fn"><b>Meridian-Returns-2024-2025.pdf</b><span>Corporate Tax Returns · 12.6 MB</span></div><span class="stat wait" title="Pending"></span></div>
+          <div class="frow"><span class="fic">📄</span><div class="fn"><b>Operating-Agreement-2018.pdf</b><span>Operating Agreement (LLC) · 0.9 MB</span></div><span class="stat bad" title="Re-requested"></span></div>
+          <div class="frow"><span class="fic">📄</span><div class="fn"><b>Meridian-Corp-Resolution.pdf</b><span>Corporate Resolution · 0.4 MB</span></div><span class="stat ok" title="Valid"></span></div>
+          <div class="frow" style="border:1px dashed #EBD9B4;background:#FFFEF9"><span class="fic">⚠️</span><div class="fn"><b>Personal Tax Returns</b><span>not received · missing from checklist</span></div><span class="stat bad" title="Missing"></span></div>
+          <div class="frow" style="border:1px dashed #EBD9B4;background:#FFFEF9"><span class="fic">⚠️</span><div class="fn"><b>Property Description</b><span>not received · missing from checklist</span></div><span class="stat bad" title="Missing"></span></div>
+        </aside>
+        <div class="pv">
+          <div class="pvhead">
+            <h4>Meridian-FY24-25-Financials.xlsx</h4>
+            <span class="badge warn">In review</span>
+            <span class="meta2" style="margin-left:auto">Checklist item · Corporate Financial Statements</span>
+          </div>
+          <div class="pdoc" aria-label="Document preview">
+            <div class="ph">Meridian Logistics LLC — Consolidated financial statements, FY 2024–2025</div>
+            <div class="skel w80"></div><div class="skel w60"></div><div class="skel w70"></div><div class="skel w45"></div>
+            <div class="skelrow"><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div></div>
+          </div>
+          <div class="dcard" style="border-color:var(--navy-100)">
+            <h5>Checker finding</h5>
+            <p>Add a finding only if the document is wrong. Findings — invalid and missing alike — bundle on the validation summary below; the Checker sends them as one secure re-request.</p>
+            <textarea placeholder="e.g. Operating agreement is the 2018 version — we need the current amended agreement."></textarea>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn primary">Mark valid — matches checklist</button>
+              <button class="btn ghost">Flag — invalid · needs re-upload</button>
+            </div>
+            <p style="font-size:12px;color:var(--muted);margin-top:10px;margin-bottom:0">Decision saved per document — missing items are auto-flagged from the checklist; the Checker never has to remember what was never sent.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p style="font-family:var(--display);font-weight:600;font-size:15.5px;color:var(--navy);margin:26px 0 12px">🧾 Validation summary — valid · invalid · missing</p>
+    <div class="frame" style="margin-top:20px">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/intake/checker/REQ-2026-0847/summary</div>
+        <span class="badge info">Validation complete · 12 of 12 checked</span>
+      </div>
+      <nav class="wtabs" aria-label="Workspace"><a class="wtab" href="#">My queue</a><a class="wtab" href="#">Applications</a><a class="wtab" href="#">Parking bay</a><a class="wtab on" href="#">Findings</a><a class="wtab" href="#">Approvals</a></nav>
+      <div class="xwrap">
+        <div class="xtop">
+          <h4>Validation summary — Priya Sharma · Meridian Logistics LLC</h4>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <span class="badge ok">9 valid</span>
+            <span class="badge bad">1 invalid</span>
+            <span class="badge warn">2 missing</span>
+          </div>
+        </div>
+        
+        <table class="xtable">
+          <thead><tr><th>Document</th><th>Checklist item</th><th>Checker decision</th><th>Finding / requirement</th></tr></thead>
+          <tbody>
+            <tr><td><b>Sharma-PFS-2026.pdf</b></td><td>Personal Financial Statements</td><td><span class="badge ok">Valid</span></td><td style="color:var(--muted)">—</td></tr>
+            <tr><td><b>Meridian-FY24-25-Financials.xlsx</b></td><td>Corporate Financial Statements</td><td><span class="badge ok">Valid</span></td><td style="color:var(--muted)">—</td></tr>
+            <tr><td><b>Meridian-Returns-2024-2025.pdf</b></td><td>Corporate Tax Returns</td><td><span class="badge ok">Valid</span></td><td style="color:var(--muted)">—</td></tr>
+            <tr><td colspan="4" style="text-align:center;color:#9AA7C4;font-size:11.5px;padding:8px">⋯ 6 more documents · all valid ⋯</td></tr>
+            <tr class="low"><td><b>Operating-Agreement-2018.pdf</b></td><td>Operating Agreement (LLC)</td><td><span class="badge bad">Invalid</span></td><td style="font-size:12.5px">2018 version — current amended agreement required</td></tr>
+            <tr class="low"><td style="color:var(--muted)">— not received</td><td>Personal Tax Returns</td><td><span class="badge warn">Missing</span></td><td style="font-size:12.5px">Last 2 years · complete with schedules</td></tr>
+            <tr class="low"><td style="color:var(--muted)">— not received</td><td>Property Description</td><td><span class="badge warn">Missing</span></td><td style="font-size:12.5px">Legal description of the subject property</td></tr>
+          </tbody>
+        </table>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
+          <button class="btn navy">Send secure re-request · 3 findings</button>
+          <button class="btn primary">Submit validation — 9 valid to Reviewer</button>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted)">🔒 One re-request per cycle · owned by the Checker · Reviewer &amp; Coordinator copied</span>
+        </div>
+      </div>
+    </div>
+  
+    <div class="frame" style="margin-top:20px">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/intake/checker/notifications</div>
+        <span class="badge warn">Notifications owned by the Checker</span>
+      </div>
+      <div class="xwrap">
+        <div class="xtop"><h4>Re-request &amp; reminder notifications</h4><span class="badge info" style="margin-left:auto">Findings travel verbatim · SPF / DKIM / DMARC</span></div>
+        <div class="ent"><span class="edot" style="background:var(--gold)"></span><b>Re-request · 3 findings</b><span class="etag"><span class="badge warn">Queued</span> · 1 invalid + 2 missing · fresh single-purpose link</span></div>
+        <div class="ent"><span class="edot" style="background:#C6D1E6"></span><b>Reminder · unanswered re-request</b><span class="etag"><span class="badge info">Auto in 3 days</span> · escalates to Reviewer if silent</span></div>
+        <div class="ent"><span class="edot" style="background:var(--ok)"></span><b>Prior re-request · Operating Agreement</b><span class="etag"><span class="badge ok">Answered</span> · re-upload received · finding closed</span></div>
+        <p style="font-size:12px;color:var(--muted);margin:10px 0 0">The Checker writes the finding once — the notification carries it word for word. Every send is audit-logged; the Coordinator sees delivery status in their completeness view.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="handoff"><span class="hline"></span> a clean package unlocks the <b>Approver's gate</b> <span class="hline"></span></div>
+
+  <!-- ================= R5 · APPROVER ================= -->
+  <section class="silo a" id="r5">
+    <div class="rhead">
+      <span class="rtag a">ROLE 5 · INTAKE APPROVER</span>
+      <div><h2>Commit the package to the Credit File Server</h2><div class="actor">R. Douglas · Intake approver</div></div>
+      <div class="rio"><span class="iochip">In: <b>clean package</b></span><span class="iochip">Out: <b>twinned documents → extraction</b></span></div>
+    </div>
+    <p class="mandate">The gate out of intake — and the stage’s overseer: the Approver lands on the intake operations dashboard, watching every application, queue, and SLA across all roles. Confirms every Checker finding is resolved, then commits the parking-bay package into the Credit File Server — the moment each document becomes a twin and the extraction pipeline takes over. Separation of duties by design: the Approver assigned none of the checks and made none of the findings.</p>
+    <p style="font-family:var(--display);font-weight:600;font-size:15.5px;color:var(--navy);margin:0 0 12px">🗂 Intake dashboard — the Approver’s landing view</p>
+    <div class="frame">
+    <div class="chrome">
+      <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/intake</div>
+      <span class="badge ok">Approver · R. Douglas — stage oversight</span>
+    </div>
+    <div class="dash">
+
+      <div class="metrics" style="grid-template-columns:repeat(6,1fr)">
+        <div class="metric"><div class="k">Applications in intake</div><div class="v">14</div></div>
+        <div class="metric"><div class="k">Docs in parking bay</div><div class="v">38</div></div>
+        <div class="metric hot"><div class="k">Re-requests open</div><div class="v" style="color:var(--gold-deep)">4</div></div>
+        <div class="metric"><div class="k">Avg completeness</div><div class="v">78%</div></div>
+        <div class="metric hot"><div class="k">SLA breaches</div><div class="v bad">1</div></div>
+        <div class="metric"><div class="k">Committed this week</div><div class="v" style="color:var(--ok)">9</div></div>
+      </div>
+
+      <div class="statstrip">
+        <span><b>3.1 days</b> median request → commit</span>
+        <span><b>92%</b> documents valid on first upload</span>
+        <span><b>24h</b> assignment SLA · <b>1</b> breach flagged</span>
+        <span><b>0</b> packages advanced with open findings</span>
+      </div>
+
+      <div class="dgrid">
+      <div>
+
+        <div class="panel">
+          <div class="phead"><h4>Intake funnel — where the 14 applications sit</h4><span class="note">by role stage</span></div>
+          <div class="segbar">
+            <i style="width:36%;background:var(--gold)" title="Awaiting customer · 5"></i>
+            <i style="width:29%;background:var(--navy)" title="In check · 4"></i>
+            <i style="width:21%;background:#D9A441" title="Findings open · 3"></i>
+            <i style="width:14%;background:var(--ok)" title="At approval gate · 2"></i>
+          </div>
+          <div class="seglegend">
+            <span><i class="sd" style="background:var(--gold)"></i>Awaiting customer · 5</span>
+            <span><i class="sd" style="background:var(--navy)"></i>In check · 4</span>
+            <span><i class="sd" style="background:#D9A441"></i>Findings open · 3</span>
+            <span><i class="sd" style="background:var(--ok)"></i>At approval gate · 2</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="phead"><h4>Workload by role</h4><span class="note">live queues · balance from the Reviewer board</span></div>
+          <div class="qbar" style="margin-bottom:0">
+            <div class="qcard"><div class="k">Coordinator · D. Whitfield</div><div class="v">6</div><div class="k">active applications</div></div>
+            <div class="qcard"><div class="k">Reviewer · S. Okafor</div><div class="v">3</div><div class="k">packages · 4 unassigned tasks</div></div>
+            <div class="qcard"><div class="k">Checkers · Rivera + Chen</div><div class="v">9</div><div class="k">check tasks · 5 + 4 split</div></div>
+            <div class="qcard"><div class="k">Approver · R. Douglas</div><div class="v">2</div><div class="k">at the gate</div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="phead"><h4>Findings this week</h4><span class="note">12 findings · written once, sent verbatim</span></div>
+          <div class="segbar" style="height:10px">
+            <i style="width:58%;background:#D9A441" title="Missing · 7"></i>
+            <i style="width:42%;background:var(--bad)" title="Invalid · 5"></i>
+          </div>
+          <div class="seglegend" style="margin-bottom:10px">
+            <span><i class="sd" style="background:#D9A441"></i>Missing · 7</span>
+            <span><i class="sd" style="background:var(--bad)"></i>Invalid · 5</span>
+          </div>
+          <div class="ctxrow" style="margin-bottom:0">
+            <span class="ctxchip">Outdated version · <b>4</b></span>
+            <span class="ctxchip">Wrong period · <b>3</b></span>
+            <span class="ctxchip">Illegible scan · <b>2</b></span>
+            <span class="ctxchip">Unsigned · <b>2</b></span>
+            <span class="ctxchip">Wrong entity · <b>1</b></span>
+          </div>
+        </div>
+
+      </div>
+      <aside>
+        <div class="railp">
+          <h5>Needs attention</h5>
+          <div class="attn"><span class="adot" style="background:var(--bad)"></span><div class="at"><b>SLA breach — REQ-2026-0832</b><span>unassigned 31h · Reviewer queue</span></div><a href="#r3">Assign</a></div>
+          <div class="attn"><span class="adot" style="background:var(--gold)"></span><div class="at"><b>Re-request queued — Meridian</b><span>3 findings · Checker to send</span></div><a href="#r4">Send</a></div>
+          <div class="attn"><span class="adot" style="background:var(--gold)"></span><div class="at"><b>Gate review — Harbor Point</b><span>12 of 12 clean · awaiting Approver</span></div><a href="#r5">Open</a></div>
+          <div class="attn"><span class="adot" style="background:var(--navy)"></span><div class="at"><b>Aging — Blue Ridge Catering</b><span>6 days in intake · no upload after resend</span></div><a href="#r2">Nudge</a></div>
+        </div>
+        <div class="railp">
+          <h5>Firing today</h5>
+          <div class="wkrow"><span class="wd">9 AM</span><div>Reminder — Elena Ortiz<span>auto · resent link · day 3</span></div></div>
+          <div class="wkrow"><span class="wd">11 AM</span><div>Package due to Reviewer<span>Sharma · at 12 of 12</span></div></div>
+          <div class="wkrow"><span class="wd">2 PM</span><div>Approval gate — Harbor Point<span>R. Douglas · commit window</span></div></div>
+        </div>
+        <div class="railp" style="margin-bottom:0">
+          <h5>Intake pulse</h5>
+          <div class="pulse2"><span>First-upload validity</span><b>92%</b></div>
+          <div class="compbar"><i style="width:92%"></i></div>
+          <div class="pulse2"><span>Median time in stage</span><b>3.1d</b></div>
+          <div class="pulse2"><span>Oldest application</span><b style="color:var(--gold-deep)">6d</b></div>
+          <div class="pulse2"><span>Fraud-guard stops · 30d</span><b style="color:var(--bad)">1</b></div>
+        </div>
+      </aside>
+      </div>
+
+    </div>
+  </div>
+
+    <p style="font-family:var(--display);font-weight:600;font-size:15.5px;color:var(--navy);margin:26px 0 12px">✅ Approval gate — commit to the Credit File Server</p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/intake/approver/REQ-2026-0847</div>
+        <span class="badge ok">All findings resolved · 12 of 12</span>
+      </div>
+      <nav class="wtabs" aria-label="Workspace"><a class="wtab" href="#">My queue</a><a class="wtab" href="#">Applications</a><a class="wtab" href="#">Parking bay</a><a class="wtab" href="#">Findings</a><a class="wtab on" href="#">Approvals</a></nav>
+      <div class="xwrap">
+        <div class="bt-card" style="margin-bottom:14px">
+          <h6>Approval gate — REQ-2026-0847</h6>
+          <div class="ent"><span class="edot" style="background:var(--ok)"></span><b>Checklist complete</b><span class="etag">12 of 12 received · re-uploads verified</span></div>
+          <div class="ent"><span class="edot" style="background:var(--ok)"></span><b>All findings closed</b><span class="etag">1 invalid re-uploaded · 2 missing supplied</span></div>
+          <div class="ent"><span class="edot" style="background:var(--ok)"></span><b>Four-role trail intact</b><span class="etag">Coordinator → Reviewer → Checker sign-offs audit-logged</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="btn primary">Approve — commit 12 documents to Credit File Server</button>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted)">On approve: parking bay → document twins (DT-0847-001…012) · extraction kick-starts · stage → Extraction</span>
+        </div>
+        <div class="flagbar" style="background:var(--ok-bg);border-color:#BFDCC9;margin-top:16px;margin-bottom:0">
+          <span class="fic2" aria-hidden="true" style="color:var(--ok)">→</span>
+          <div><b style="color:var(--ok)">Handoff out of intake.</b><p style="color:#1E5A38">The package leaves the role silos and enters the Loans workflow — twin extraction, verification, and credit review — exactly as in the main flow mock.</p></div>
+        </div>
+      </div>
+    </div>
+  
+    <div class="frame" style="margin-top:20px">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar"><span class="lock">🔒</span> workspace.freedombankva.com/intake/approver/notifications</div>
+        <span class="badge ok">Notifications owned by the Approver</span>
+      </div>
+      <div class="xwrap">
+        <div class="xtop"><h4>Confirmation &amp; commit notifications</h4><span class="badge info" style="margin-left:auto">Fire on approval — never before</span></div>
+        <div class="ent"><span class="edot" style="background:var(--ok)"></span><b>Applicant confirmation</b><span class="etag"><span class="badge info">Armed · sends on commit</span> · "Thanks — the FBOV team will reach out" · REQ reference</span></div>
+        <div class="ent"><span class="edot" style="background:var(--ok)"></span><b>Internal commit notice</b><span class="etag"><span class="badge info">Armed</span> · Reviewer &amp; Coordinator notified · package → Credit File Server</span></div>
+        <div class="ent"><span class="edot" style="background:#C6D1E6"></span><b>Extraction kick-start</b><span class="etag"><span class="badge info">Armed</span> · Loans workflow takes over · twins DT-0847-001…012</span></div>
+        <p style="font-size:12px;color:var(--muted);margin:10px 0 0">Confirmation is a promise the bank keeps only once the package is truly committed — which is why the Approver, not the Coordinator, owns this send.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer class="foot" style="margin-top:60px">
+  <div class="wrap">
+    <span class="mark" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12.5" fill="none" stroke="#2A3C7E" stroke-width="5"/><path d="M17 4.5 A12.5 12.5 0 0 1 29.5 17" fill="none" stroke="#E87722" stroke-width="5" stroke-linecap="round"/></svg>
+    </span>
+    <span>Freedom Bank of Virginia · Intake workflow — role-based silos · UI concept mock</span>
+    <span class="sp">Prepared by Intics · A Zuci Company · Confidential</span>
+  </div>
+</footer>
+
+</body>
+</html>

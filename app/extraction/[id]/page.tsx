@@ -21,6 +21,7 @@ interface LogEntry { type: string; detail: string; at: string; documentTwinId: n
 interface Extraction {
   requestId: number; referenceNumber: string | null;
   documentTwins: DocumentTwin[]; businessTwin: BusinessTwin | null; log: LogEntry[];
+  canSubmitForReview: boolean; submittedForReviewAt: string | null;
 }
 
 const DOCUMENT_STAGE_ORDER = ["received", "classified", "extracted", "provenance", "confidence"];
@@ -78,8 +79,11 @@ export default function ExtractionPage() {
   const [data, setData] = useState<Extraction | null>(null);
   const [notQueued, setNotQueued] = useState(false);
   const [selectedTwinId, setSelectedTwinId] = useState<number | null>(null);
-  const [busyId, setBusyId] = useState<number | "business" | null>(null);
+  const [busyId, setBusyId] = useState<number | "business" | "submit" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [discrepancyComment, setDiscrepancyComment] = useState("");
+  const [discrepancySent, setDiscrepancySent] = useState(false);
+  const [submitDone, setSubmitDone] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -127,6 +131,38 @@ export default function ExtractionPage() {
     }
   };
 
+  const sendDiscrepancy = async (twinId: number) => {
+    setActionError(null);
+    setBusyId(twinId);
+    try {
+      const res = await fetch(`/api/requests/${requestId}/extraction/${twinId}/discrepancy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: discrepancyComment }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setActionError(d.error || "Could not send the discrepancy email."); return; }
+      setDiscrepancySent(true);
+      setDiscrepancyComment("");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const submitForReview = async () => {
+    setActionError(null);
+    setBusyId("submit");
+    try {
+      const res = await fetch(`/api/requests/${requestId}/submit-for-review`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) { setActionError(d.error || "Could not submit for loan officer review."); return; }
+      setSubmitDone(true);
+      await load();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   if (checking || !me) return null;
 
   const selected = data?.documentTwins.find(t => t.id === selectedTwinId) ?? null;
@@ -161,7 +197,7 @@ export default function ExtractionPage() {
                   Documents queued · {data.documentTwins.length}
                 </div>
                 {data.documentTwins.map(t => (
-                  <div key={t.id} onClick={() => setSelectedTwinId(t.id)}
+                  <div key={t.id} onClick={() => { setSelectedTwinId(t.id); setDiscrepancyComment(""); setDiscrepancySent(false); }}
                     style={{
                       padding: "12px 16px", borderBottom: "1px solid var(--line-soft)", cursor: "pointer",
                       background: t.id === selectedTwinId ? "var(--navy-100)" : "transparent",
@@ -233,6 +269,25 @@ export default function ExtractionPage() {
                       {DOCUMENT_STAGE_ORDER.indexOf(selected.currentStage) >= DOCUMENT_STAGE_ORDER.indexOf("extracted") && selected.extractedValues.length === 0 && (
                         <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>No extractable values found in this file.</p>
                       )}
+
+                      {selected.extractedValues.length > 0 && (
+                        <div className="dcard" style={{ border: "1px solid var(--navy-100)", borderRadius: 10, padding: 16, marginTop: 14 }}>
+                          <h5 style={{ fontSize: 13, marginBottom: 6 }}>Discrepancy — query the customer</h5>
+                          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+                            The comment is included verbatim in the secure email; the request stays open until resolved.
+                          </p>
+                          <textarea value={discrepancyComment} onChange={e => setDiscrepancyComment(e.target.value)}
+                            placeholder="e.g. Cash-flow totals on page 4 don't reconcile with the income statement — please re-check and upload a corrected statement."
+                            style={{ width: "100%", minHeight: 70, borderRadius: 8, border: "1.5px solid var(--line)", padding: 10, fontSize: 13, fontFamily: "inherit", marginBottom: 10 }} />
+                          <button className="btn navy" disabled={busyId === selected.id || !discrepancyComment.trim()}
+                            onClick={() => sendDiscrepancy(selected.id)}>
+                            Send secure email with review comments
+                          </button>
+                          {discrepancySent && (
+                            <span style={{ marginLeft: 10, fontSize: 12, color: "var(--ok)" }}>Sent — logged and delivery attempted.</span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {data.businessTwin && (
@@ -257,6 +312,28 @@ export default function ExtractionPage() {
                   </>
                 )}
               </div>
+            </div>
+
+            <div className="panel" style={{ marginTop: 20 }}>
+              <div className="phead">
+                <h4>Handoff</h4>
+                <span className="note">Gated on zero HITL-pending values across every queued document</span>
+              </div>
+              {data.submittedForReviewAt ? (
+                <span className="badge ok">✓ Submitted for loan officer review · {new Date(data.submittedForReviewAt).toLocaleString()}</span>
+              ) : (
+                <>
+                  <button className="btn primary" disabled={busyId === "submit" || !data.canSubmitForReview} onClick={submitForReview}>
+                    Submit for loan officer review
+                  </button>
+                  {!data.canSubmitForReview && (
+                    <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+                      Every extracted value across every queued document must be Verified (no HITL review pending) first.
+                    </p>
+                  )}
+                  {submitDone && <span style={{ marginLeft: 10, fontSize: 12, color: "var(--ok)" }}>Submitted.</span>}
+                </>
+              )}
             </div>
 
             <div className="panel" style={{ marginTop: 20 }}>

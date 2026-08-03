@@ -264,14 +264,16 @@ the second pass, where most of the "infrastructure that doesn't exist"
 group turned out to be buildable for real after all, once broken down
 number by number.
 
-- `WorkspaceNav` shows two tabs -- Overview and Customer activity -- not the
-  mockup's five (Overview / Customer activity / Parking bay / Loans /
-  Portfolio). Parking bay, Loans, and Portfolio don't have a real *global*
-  landing page in this app (parking bay is per-request only; Loans/Portfolio
-  need pipeline stages beyond what's built) -- omitted rather than linked to
-  something that doesn't exist. It appears on all four real workspace
-  screens (dashboard, activity, parking bay, extraction) -- v5 adds the same
-  nav bar to Steps 6 and 7 too, not just Step 2.
+- `WorkspaceNav` originally shipped with two tabs -- Overview and Customer
+  activity -- not the mockup's five (Overview / Customer activity / Parking
+  bay / Loans / Portfolio). Parking bay, Loans, and Portfolio don't have a
+  real *global* landing page in this app (parking bay is per-request only;
+  Loans/Portfolio need pipeline stages beyond what's built) -- omitted
+  rather than linked to something that doesn't exist. It appears on all four
+  real workspace screens (dashboard, activity, parking bay, extraction) --
+  v5 adds the same nav bar to Steps 6 and 7 too, not just Step 2. **Parking
+  bay got a real global landing page in a later pass -- see the addendum
+  below.**
 - The Customer Activity screen's event trail is assembled entirely from data
   already logged elsewhere (`RequestEmail`, `UploadedFile`, `ExtractionEvent`)
   -- no new event-logging model was needed. `audit.write` rows are excluded
@@ -291,6 +293,38 @@ parking bay, extraction), new `app/activity/page.tsx`.
 | 2c.3 | Send event is real | Request just sent | GET activity | "Secure request sent" event present, timestamp matches the logged email | ✅ `test_activity_includes_the_sent_email_event` |
 | 2c.4 | Upload + review events, chronological | Upload then flag a document | GET activity | Both events present, `at` timestamps strictly non-decreasing (oldest first, matching the mockup's reading order) | ✅ `test_activity_includes_upload_and_review_events_in_chronological_order` — also verified live against real data |
 | 2c.5 | Twin/business-twin events included, `audit.write` excluded | Extraction kicked off | GET activity | `document_twin.received` / `business_twin.relationship` present; `audit.write` absent | ✅ `test_activity_twin_events_included_but_audit_write_excluded` |
+
+**Addendum — real "Parking bay" nav tab and global landing page:** user-reported
+("i could not see parking bay in the screen") -- the nav bar had no Parking
+bay tab at all, since at the time there was no global landing page to point
+it at. Rather than link to something fake, built a real one: `GET
+/api/requests/parking-bay` returns every request with at least one uploaded
+document still sitting in the parking bay (not yet queued for extraction) --
+reuses the same `_review_state()` helper as the per-request parking-bay
+endpoint, so the counts are computed identically, not a separate
+approximation. New `app/parking-bay/page.tsx` (same per-request-card pattern
+as `app/activity/page.tsx`) lists borrower/company, reference number, and
+live pending/approved/flagged counts, with an "Open" button into the
+existing per-request `/parking-bay/<id>` review screen. `WorkspaceNav`
+gained the third tab; its active-tab check now also matches
+`/parking-bay/<id>` so the tab highlights correctly from the per-request
+page too, not just the list page itself.
+
+5 more tests (`test_global_parking_bay_list_*`, folded into
+`ParkingBayReviewTests`, 189 total across the whole backend). Verified live
+end-to-end through the real proxy stack: confirmed a fresh request is absent
+from the list before any upload, appears with the correct `pendingCount`
+once one file is uploaded, reflects live approve/flag decisions, and
+disappears once extraction is kicked off -- all against real data, not
+synthetic fixtures alone.
+
+| ID | Case | Given | When | Then | Status |
+|----|------|-------|------|------|--------|
+| 2c.6 | Global list includes a request with an uploaded, unreviewed file | Upload without a decision | GET `/api/requests/parking-bay` | Row present, `pendingCount` == number of uploaded items, `approvedCount`/`flaggedCount` == 0 | ✅ `test_global_parking_bay_list_includes_requests_with_uploads` — also verified live |
+| 2c.7 | Global list reflects live decisions | Mixed approve/flag | GET the list | Counts match exactly, recomputed from live `_review_state()`, not cached | ✅ `test_global_parking_bay_list_reflects_live_decisions` — also verified live |
+| 2c.8 | A request drops off the list once extraction is queued | All approved, kicked off | GET the list | Request no longer present -- it's moved past the parking-bay stage | ✅ `test_global_parking_bay_list_drops_a_request_once_queued` — also verified live |
+| 2c.9 | A request with nothing uploaded yet doesn't appear | Sent, no uploads | GET the list | Request absent -- "awaiting customer", not "in the parking bay" | ✅ `test_global_parking_bay_list_excludes_requests_with_nothing_uploaded_yet` |
+| 2c.10 | List requires auth | Not logged in | GET the list | 403 | ✅ `test_global_parking_bay_list_requires_auth` |
 
 ---
 
@@ -449,6 +483,37 @@ infrastructure this project doesn't otherwise have.
 | 3.22 | Real SMTP protocol sequence (EHLO → STARTTLS → sendmail) | Domain allowlisted, `MAIL_TEST_SERVER` set | `send_direct_email(...)` | Real call sequence against the connection, correct recipient list passed to `sendmail` | ✅ `test_allowed_domain_sends_via_real_smtp_protocol_calls` — also verified live against a real (non-mocked) local `smtpd.DebuggingServer` |
 | 3.23 | A real SMTP-level failure is caught, not raised | Connection/protocol error | `send_direct_email(...)` | Returns `(attempted=True, delivered=False)`, never raises | ✅ `test_smtp_failure_returns_attempted_not_delivered_and_does_not_raise`, `test_failed_delivery_still_creates_the_audit_row` |
 | 3.24 | Real MX lookup, cached, with a DNS-failure fallback | Real/fake domain | `_resolve_mx(domain)` | Real `dns.resolver.resolve` call, cached on repeat; falls back to the domain itself if DNS fails (RFC 5321), never raises | ✅ `test_mx_resolution_uses_dns_and_caches`, `test_mx_resolution_falls_back_to_domain_on_dns_failure` — also verified live against `gmail.com`'s real MX records |
+| 3.25 | Real-MX send never hangs past its configured timeout, even under a hanging system resolver | Real hostname on the real-MX path | `send_direct_email(...)` | `smtplib.SMTP` is handed a bare IP (resolved via `dns.resolver`, not the system resolver) so `MAIL_TIMEOUT_SECONDS` is actually honored | ✅ `test_resolve_ip_passes_through_an_ip_literal_without_a_dns_query`, `test_real_mx_branch_connects_via_resolved_ip_not_hostname` — regression tests for a real crash, see write-up below |
+
+**Real bug found via live browser testing, fixed this pass:** the user hit
+a raw Next.js runtime error ("JSON.parse: unexpected character...") while
+testing manually in the browser -- a strong signal the backend never
+returned valid JSON at all. Root cause: `smtplib.SMTP(host, port,
+timeout=N)`'s `timeout` only ever governs `connect()`, never DNS
+resolution -- and this dev sandbox's system resolver (`getaddrinfo()`)
+hangs **indefinitely** on real hostnames (reproduced directly: a connect
+attempt to a real resolved MX host blocked 40+ seconds despite
+`timeout=10`). A live send to a real domain therefore hung past gunicorn's
+30s worker timeout and got the worker SIGABRT-killed mid-request -- exactly
+what produced the broken response. This had never been caught before
+because every prior live verification of the mail path used
+`MAIL_TEST_SERVER` (a local address, resolved instantly, no network DNS
+involved); the real-MX path was never actually exercised end-to-end until
+the user tested manually with a real `@intics.ai` address.
+
+**Fix:** new `_resolve_ip(host)` in `mail_delivery.py` resolves the
+real-MX target's A record via `dns.resolver` (which has a real, bounded,
+working timeout in this sandbox) and hands `smtplib.SMTP()` a bare IP,
+never a hostname -- so DNS resolution can never be left to the hanging
+system resolver. `MAIL_TEST_SERVER`'s literal host bypasses this entirely,
+unchanged. Verified live twice through the real proxy stack: (1) reproduced
+the raw 40+ second hang directly against a real MX host; (2) after the fix,
+a real send to a real `@intics.ai` address returned a proper HTTP 201 with
+valid JSON in ~10s, and the gunicorn worker PIDs were confirmed unchanged
+(survived, didn't crash). **Still an honest gap, unchanged:** the fix stops
+the crash, not the underlying sandbox constraint -- outbound port 25 is
+still blocked here, so `delivered` is still honestly `false` for any real
+send from this environment (see the "Environment constraint" note above).
 
 ---
 
@@ -629,6 +694,7 @@ for the macro-pipeline steps beyond Extraction, which aren't built.
 | 6.5 / 6.10 | Flagged file excluded from extraction batch; kick-start only queues approved files | 4 approved, 1 flagged | POST kick-start-extraction | `queuedCount` == 4 (flagged one excluded) | ✅ `test_kick_start_queues_only_approved_files` — also verified live (curl: 4 queued of 5) |
 | 6.6 | Review summary reflects live decisions | Decisions change mid-review | GET parking bay again | `approvedCount`/`flaggedCount`/`reviewComplete` always match current state, no stale cache | ✅ `test_review_summary_reflects_live_decisions`, `test_review_complete_once_every_item_has_a_decision` |
 | 6.7 | Batch email fires exactly once per request, bundles all flags | 2 flagged items | POST send-flags-email | Exactly one `RequestEmail(kind='review_flags')`, body contains both comments (not two separate emails) | ✅ `test_send_flags_email_bundles_all_flags_into_one_email` — also verified live (real logged email content) |
+| 6.7b | Flags-email confirmation reflects real delivery status | Frontend, after sending | — | Message shows "✓ ... delivered" / "✕ ... delivery failed" based on the real `delivered` flag from the response -- **bug fixed this pass**: the frontend previously always said "no real mail provider configured yet", a stale leftover from before the Step 3 direct-to-MX upgrade; `send-flags-email` now returns `delivered` and the frontend reflects it honestly | ✅ verified live via curl (response includes real `delivered` field) |
 | 6.8 | Batch email blocked with zero flags | Nothing flagged | POST send-flags-email | 400 -- backend refuses to log an empty batch (frontend also hides the button when `flaggedCount === 0`) | ✅ `test_send_flags_email_requires_at_least_one_flag` |
 | 6.9 | Extraction kick-start disabled until review complete | Only 1 of 5 reviewed | POST kick-start-extraction | 400, `extraction_queued_at` stays null | ✅ `test_kick_start_blocked_until_review_complete` |
 | 6.9b | Extraction can't be queued twice | Already queued | POST kick-start-extraction again | 400 | ✅ `test_kick_start_cannot_be_queued_twice` — also verified live |
@@ -724,28 +790,88 @@ or later.
 
 ---
 
-## Step 8 — Extraction Review & Handoff + Business Twin 🔲 Planned
+## Step 8 — Extraction Review & Handoff ✅ Built (business twin explicitly scoped out — see below)
 
 Copy requirement: *"Clean result → submit to loan officer. A discrepancy →
 HITL comment goes back to the customer... obligation stays open until
 resolved."*
 
-| ID | Case | Expected |
-|----|------|----------|
-| 8.1 | Confidence threshold routes to HITL correctly | Fields below the confidence cutoff (e.g. 71%, 68% in the mock) are flagged "HITL review"; fields above (97%+) show "Verified" |
-| 8.2 | Every value shows source + confidence | No extracted field is missing its `page.row`/sheet-cell provenance pointer |
-| 8.3 | "Submit for loan officer review" only enabled when zero HITL items remain | Button blocked/hidden while any field is still `HITL review` status |
-| 8.4 | Discrepancy path requires a comment | "Send secure email with review comments" blocked on an empty textarea |
-| 8.5 | Discrepancy email is sent verbatim | The exact HITL comment text appears in the customer-facing email body, unmodified |
-| 8.6 | Discrepancy keeps the obligation open | After sending, the covenant/document obligation is *not* marked fulfilled until a corrected upload is verified |
-| 8.7 | Document twin version increments on re-upload | A corrected re-upload produces "v2 of 2" (or higher), not an overwrite of v1's history |
-| 8.8 | Business twin updates only from a *verified* document twin | An unverified/HITL-pending document twin does not push values into the business twin yet |
-| 8.9 | Advisory flag on covenant breach | DSCR (or any monitored ratio) crossing its floor/ceiling produces an advisory flag — and explicitly takes **no automatic action** (per copy: "the system takes no action on its own") |
-| 8.10 | Advisory flag shows full basis | Flag includes the calculation (numerator, denominator, source document, sheet/row) — not just a bare "flagged" badge |
-| 8.11 | Consolidated allocation closes multiple obligations from one upload | One financial statement upload satisfies the stated obligation for all three linked entities simultaneously — verify all three covenant rows flip to "Fulfilled" |
-| 8.12 | Every twin update is audit-logged | "actor, source document, timestamp" recorded for each mutation — matches the append-only pattern from Step 1's `LoginEvent` |
-| 8.13 | Loan history table is read-only | Prior approaches (approved/withdrawn/declined) cannot be edited from this screen — historical record only |
-| 8.14 | Declined-history reasoning preserved verbatim | A 2019 decline reason (e.g. "DSCR 1.05x below policy floor") remains exactly reconstructable years later, no data loss |
+**Scope decision #1, made explicitly with the user before building this
+step:** the mockup's Step 8b ("Business twin — the relationship, kept
+current") needs a covenant ledger, DSCR sparklines, loan history, and
+advisory-flag data model that doesn't exist anywhere in this project (no
+`Covenant`/`Entity`/loan-history tables) -- building it would mean inventing
+an entire new domain from scratch, not extending something real. **The user
+chose to skip Step 8b entirely** rather than fake it. 8.7–8.14 below (all
+business-twin-dependent) are therefore explicit gaps, not built.
+
+**Scope decision #2, made explicitly with the user:** a discrepancy email
+(8.4/8.5) is real and sent for real, but does **not** trigger a formal
+document-twin versioning cycle (8.7's "v2 of 2, supersedes..."). **The user
+chose to keep it simple** -- sending the email doesn't mark anything
+resolved or open a new version; the request just stays open until a banker
+judges it resolved through the existing review tools (re-running extraction
+on a fresh upload, same as any other document). 8.6/8.7 are gaps for the
+same reason.
+
+What got built: `DocumentRequest.submitted_for_review_at` (migration
+`0011`) -- a real one-time timestamp gated by `_extraction_review_gate()`
+in `views.py`, which requires at least one `ExtractedValue` to exist (an
+empty request can't submit) **and** every value across every `DocumentTwin`
+in the request to be at/above `CONFIDENCE_ROUTING_THRESHOLD` (0.85) -- the
+same real threshold Step 7 already computes, not a new one. New endpoints:
+`POST /api/requests/<id>/submit-for-review` (400 if already submitted or
+if any value is still HITL-pending), `POST
+/api/requests/<id>/extraction/<twin_id>/discrepancy` (400 without a
+comment). The discrepancy email (`log_discrepancy_email` in
+`email_service.py`) reuses the same real direct-to-MX delivery pipeline
+(`_log_and_deliver`) as every other email in this project -- not a
+separate log-only path -- and includes the HITL comment verbatim, the
+document's real file name, and the request's reference number.
+`RequestEmail.KIND_CHOICES` gained `'discrepancy'`.
+Tests in `ExtractionReviewAndHandoffTests` (11 tests, 201 total across the
+whole backend).
+
+Frontend: `app/extraction/[id]/page.tsx` gained a discrepancy-comment panel
+(styled to match the parking-bay review-comments panel) under the extracted-
+values table, and a "Handoff" panel showing either a submitted badge or the
+"Submit for loan officer review" button (disabled unless `canSubmitForReview`
+from the API is true).
+
+Verified live end-to-end through the real proxy stack: sent a request,
+uploaded real `$100`-containing files to all 12 default checklist items,
+approved and kicked off extraction, advanced all 12 twins to `extracted`,
+confirmed `canSubmitForReview: true` and a real extracted value (`$100`,
+confidence 0.95, `needsReview: false`); sent a real discrepancy email and
+confirmed the logged `RequestEmail` body contained the comment verbatim and
+the correct uploaded file name; submitted for review and confirmed a real
+`submittedForReviewAt` timestamp was returned and persisted; confirmed
+submitting twice correctly 400s. Cleaned up the test `DocumentRequest` row
+and its disk folder under the shared storage location afterward.
+
+| ID | Case | Given | When | Then | Status |
+|----|------|-------|------|------|--------|
+| 8.1 | Confidence threshold routes to HITL correctly | Values above/below `CONFIDENCE_ROUTING_THRESHOLD` (0.85) | GET extraction | Each `ExtractedValue.needsReview` is `False` at/above the threshold, `True` below it (already computed for real in Step 7) | ✅ Covered by Step 7's `test_needs_review_below_threshold` — reused, not re-tested |
+| 8.2 | Every value shows source + confidence | Any extracted value | GET extraction | `fieldName`/`value`/`source`/`confidence`/`needsReview` all present, no field missing its provenance pointer | ✅ Covered by Step 7's extracted-value tests — reused, not re-tested |
+| 8.3a | Submit blocked while any value is HITL-pending | One `ExtractedValue` with confidence below threshold, injected via ORM | POST submit-for-review | 400, `submitted_for_review_at` stays null | ✅ `test_cannot_submit_while_a_value_is_hitl_pending` |
+| 8.3b | Submit enabled once every value is verified | All values at/above threshold | GET extraction | `canSubmitForReview: true` | ✅ `test_can_submit_for_review_true_when_all_values_verified` — also verified live |
+| 8.3c | Submit succeeds and records a real timestamp | Gate open | POST submit-for-review | 200, real `submittedForReviewAt` returned and persisted | ✅ `test_submit_for_review_succeeds_and_records_timestamp` — also verified live |
+| 8.3d | Submit can't happen twice | Already submitted | POST submit-for-review again | 400 | ✅ `test_cannot_submit_for_review_twice` — also verified live |
+| 8.3e | Submit requires auth | — | POST as anon | 403 | ✅ `test_submit_for_review_requires_auth` |
+| 8.4 | Discrepancy path requires a comment | — | POST discrepancy, no comment | 400, no email logged | ✅ `test_discrepancy_requires_a_comment` |
+| 8.5 | Discrepancy email is sent verbatim | Real comment text | POST discrepancy | Logged `RequestEmail(kind='discrepancy')` body contains the exact comment text and the real uploaded file name, unmodified | ✅ `test_discrepancy_email_includes_the_comment_verbatim_and_the_document_name` — also verified live via curl |
+| 8.5b | Discrepancy doesn't change request/submit state | Clean request | POST discrepancy | `submittedForReviewAt`/`canSubmitForReview` unchanged by sending | ✅ `test_discrepancy_does_not_change_request_or_submit_state` |
+| 8.5c | Discrepancy requires auth | — | POST as anon | 403 | ✅ `test_discrepancy_requires_auth` |
+| 8.5d | Discrepancy on a nonexistent twin 404s | Bogus twin id | POST discrepancy | 404 | ✅ `test_discrepancy_404s_for_nonexistent_twin` |
+| 8.6 | Discrepancy keeps the obligation open, no versioning | — | — | 🚫 Explicit scope gap (decision #2 above) — sending a discrepancy email never marks anything resolved or opens a new version; the request stays open until a banker resolves it through existing tools |
+| 8.7 | Document twin version increments on re-upload | — | — | 🚫 Explicit scope gap (decision #2 above) — no versioning model exists |
+| 8.8 | Business twin updates only from a *verified* document twin | — | — | 🚫 Explicit scope gap (decision #1 above) — no business-twin covenant data model exists |
+| 8.9 | Advisory flag on covenant breach | — | — | 🚫 Explicit scope gap (decision #1 above) |
+| 8.10 | Advisory flag shows full basis | — | — | 🚫 Explicit scope gap (decision #1 above) |
+| 8.11 | Consolidated allocation closes multiple obligations from one upload | — | — | 🚫 Explicit scope gap (decision #1 above) |
+| 8.12 | Every twin update is audit-logged | — | — | 🚫 Explicit scope gap (decision #1 above) — no business-twin mutation exists to log |
+| 8.13 | Loan history table is read-only | — | — | 🚫 Explicit scope gap (decision #1 above) — no loan-history table exists |
+| 8.14 | Declined-history reasoning preserved verbatim | — | — | 🚫 Explicit scope gap (decision #1 above) |
 
 ---
 

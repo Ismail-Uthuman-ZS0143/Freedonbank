@@ -13,6 +13,7 @@ urlpatterns = [
     path('activity', views.activity_view),
     path('needs-attention', views.needs_attention_view),
     path('search', views.search_view),
+    path('parking-bay', views.parking_bay_list_view),
     path('<int:request_id>/resend', views.resend_view),
     path('<int:request_id>/email', views.latest_email_view),
     path('<int:request_id>/uploads', views.uploaded_files_view),
@@ -23,5 +24,7 @@ urlpatterns = [
     path('<int:request_id>/parking-bay/kick-start-extraction', views.kick_start_extraction_view),
     path('<int:request_id>/extraction', views.extraction_view),
     path('<int:request_id>/extraction/<int:twin_id>/advance', views.advance_document_twin_view),
+    path('<int:request_id>/extraction/<int:twin_id>/discrepancy', views.send_discrepancy_email_view),
+    path('<int:request_id>/submit-for-review', views.submit_for_review_view),
     path('<int:request_id>/business-twin/advance', views.advance_business_twin_view),
 ]

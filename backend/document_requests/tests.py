@@ -265,8 +265,10 @@ class ResendTests(AuthenticatedAPITestCase):
 
 
 class RequestEmailTests(AuthenticatedAPITestCase):
-    """Step 3 -- no real mail provider exists, so 'sending' means composing
-    the content and logging it (RequestEmail row), not actually delivering it."""
+    """Step 3 -- every email is always logged (RequestEmail row) regardless
+    of delivery outcome; real direct-to-MX delivery is covered separately in
+    MailDeliveryTests/EmailDeliveryIntegrationTests with MAIL_ENABLED forced
+    off here via the module-level override_settings."""
 
     VALID = {
         'borrowerName': 'Priya Sharma',
@@ -889,6 +891,41 @@ class ParkingBayReviewTests(AuthenticatedAPITestCase):
         res = self.client.get(LIST_CREATE_URL)
         row = next(r for r in res.data['requests'] if r['id'] == self.doc_request.id)
         self.assertFalse(row['hasFlaggedItems'])  # superseded by the fresh (pending) upload
+
+    def test_global_parking_bay_list_includes_requests_with_uploads(self):
+        res = self.client.get('/api/requests/parking-bay')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        row = next(r for r in res.data['requests'] if r['id'] == self.doc_request.id)
+        self.assertEqual(row['pendingCount'], len(self.items))
+        self.assertEqual(row['approvedCount'], 0)
+        self.assertEqual(row['flaggedCount'], 0)
+        self.assertFalse(row['reviewComplete'])
+
+    def test_global_parking_bay_list_reflects_live_decisions(self):
+        self._review(self.items[0].id, 'approve')
+        self._review(self.items[1].id, 'flag', comment='needs redo')
+        res = self.client.get('/api/requests/parking-bay')
+        row = next(r for r in res.data['requests'] if r['id'] == self.doc_request.id)
+        self.assertEqual(row['approvedCount'], 1)
+        self.assertEqual(row['flaggedCount'], 1)
+        self.assertEqual(row['pendingCount'], len(self.items) - 2)
+
+    def test_global_parking_bay_list_drops_a_request_once_queued(self):
+        for item in self.items:
+            self._review(item.id, 'approve')
+        self.client.post(f'/api/requests/{self.doc_request.id}/parking-bay/kick-start-extraction')
+        res = self.client.get('/api/requests/parking-bay')
+        self.assertNotIn(self.doc_request.id, [r['id'] for r in res.data['requests']])
+
+    def test_global_parking_bay_list_excludes_requests_with_nothing_uploaded_yet(self):
+        empty_request = _make_sent_request(self.client, self.user, borrower_name='Nobody Yet', email='nobody@example.com')
+        res = self.client.get('/api/requests/parking-bay')
+        self.assertNotIn(empty_request.id, [r['id'] for r in res.data['requests']])
+
+    def test_global_parking_bay_list_requires_auth(self):
+        self.client.force_authenticate(user=None)
+        res = self.client.get('/api/requests/parking-bay')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class TwinExtractionTests(AuthenticatedAPITestCase):
@@ -1700,6 +1737,114 @@ class MailDeliveryTests(TestCase):
             host = mail_delivery._resolve_mx('unresolvable-domain.test')
         self.assertEqual(host, 'unresolvable-domain.test')
 
+    def test_resolve_ip_passes_through_an_ip_literal_without_a_dns_query(self):
+        with patch('document_requests.mail_delivery.dns.resolver.resolve') as mock_resolve:
+            ip = mail_delivery._resolve_ip('127.0.0.1')
+        self.assertEqual(ip, '127.0.0.1')
+        mock_resolve.assert_not_called()
+
+    @override_settings(MAIL_ENABLED=True, MAIL_ALLOWED_DOMAINS={'example.com'})
+    def test_real_mx_branch_connects_via_resolved_ip_not_hostname(self):
+        """Regression test for a real crash found via live browser testing:
+        smtplib.SMTP(hostname, ..., timeout=N)'s `timeout` never covers DNS
+        resolution -- and this sandbox's system resolver hangs indefinitely
+        on real hostnames (reproduced directly: a connect attempt blocked
+        40+ seconds despite timeout=10, until gunicorn's own worker timeout
+        killed the process mid-request, breaking the frontend's fetch with
+        an unparseable response). The fix resolves the target host's IP via
+        dns.resolver (which has a real, bounded timeout here) and hands
+        smtplib a bare IP, never a hostname, on the real-MX path."""
+        class FakeARecord:
+            def __str__(self):
+                return '203.0.113.5'
+
+        fake_mx_record = MagicMock(preference=10, exchange='mail.example.com.')
+        mock_smtp_instance = MagicMock()
+        mock_smtp_instance.has_extn.return_value = False
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_smtp_instance
+        with patch('document_requests.mail_delivery.dns.resolver.resolve',
+                   side_effect=[[fake_mx_record], [FakeARecord()]]), \
+             patch('document_requests.mail_delivery.smtplib.SMTP', return_value=mock_smtp_cm) as mock_smtp:
+            attempted, delivered = mail_delivery.send_direct_email('a@example.com', 'Subject', 'Body')
+
+        self.assertTrue(attempted)
+        self.assertTrue(delivered)
+        # smtplib must be handed the resolved IP, never the bare hostname --
+        # that's the whole point of the fix.
+        mock_smtp.assert_called_once_with('203.0.113.5', 25, timeout=10)
+
+    @override_settings(
+        MAIL_ENABLED=True, MAIL_ALLOWED_DOMAINS={'intics.ai'},
+        MAIL_RELAY_HOST='smtp.office365.com', MAIL_RELAY_PORT=587,
+        MAIL_RELAY_USERNAME='relay@intics.ai', MAIL_RELAY_PASSWORD='app-password',
+    )
+    def test_relay_configured_authenticates_and_sends_as_the_relay_account(self):
+        """When MAIL_RELAY_* is set, delivery goes through authenticated
+        SMTP submission instead of direct-to-MX -- built for this dev
+        sandbox's network, which has no outbound route on port 25 at all
+        (confirmed) but does allow port 587. The relay provider owns the
+        From address, not MAIL_FROM_ADDRESS, so both envelope-from and the
+        From header must be the authenticated relay account."""
+        mock_smtp_instance = MagicMock()
+        mock_smtp_instance.has_extn.return_value = True
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_smtp_instance
+        with patch('document_requests.mail_delivery.dns.resolver.resolve') as mock_resolve, \
+             patch('document_requests.mail_delivery.smtplib.SMTP', return_value=mock_smtp_cm) as mock_smtp:
+            attempted, delivered = mail_delivery.send_direct_email('a@intics.ai', 'Subject', 'Body')
+
+        self.assertTrue(attempted)
+        self.assertTrue(delivered)
+        mock_resolve.assert_not_called()  # relay host is trusted/known, no DNS query needed
+        mock_smtp.assert_called_once_with('smtp.office365.com', 587, timeout=10)
+        mock_smtp_instance.starttls.assert_called_once()
+        mock_smtp_instance.login.assert_called_once_with('relay@intics.ai', 'app-password')
+        from_addr = mock_smtp_instance.sendmail.call_args[0][0]
+        self.assertEqual(from_addr, 'relay@intics.ai')  # not MAIL_FROM_ADDRESS -- the relay owns this
+
+    @override_settings(
+        MAIL_ENABLED=True, MAIL_ALLOWED_DOMAINS={'intics.ai'},
+        MAIL_RELAY_HOST='smtp.office365.com', MAIL_RELAY_PORT=587,
+        MAIL_RELAY_USERNAME='relay@intics.ai', MAIL_RELAY_PASSWORD='app-password',
+        MAIL_TEST_SERVER='stub-host:2525',
+    )
+    def test_test_server_takes_precedence_over_relay(self):
+        """MAIL_TEST_SERVER (used by the automated suite and local
+        debugging) must win over MAIL_RELAY_* if both happen to be set --
+        otherwise a real credentialed relay could fire during test runs."""
+        mock_smtp_instance = MagicMock()
+        mock_smtp_instance.has_extn.return_value = False
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_smtp_instance
+        with patch('document_requests.mail_delivery.smtplib.SMTP', return_value=mock_smtp_cm) as mock_smtp:
+            attempted, delivered = mail_delivery.send_direct_email('a@intics.ai', 'Subject', 'Body')
+
+        self.assertTrue(attempted)
+        self.assertTrue(delivered)
+        mock_smtp.assert_called_once_with('stub-host', 2525, timeout=10)
+        mock_smtp_instance.login.assert_not_called()  # test-server path never authenticates
+
+    @override_settings(MAIL_ENABLED=True, MAIL_ALLOWED_DOMAINS={'intics.ai'}, MAIL_RELAY_HOST='', MAIL_RELAY_USERNAME='', MAIL_RELAY_PASSWORD='')
+    def test_relay_not_used_when_unconfigured(self):
+        """Partial/empty relay settings (the out-of-the-box default) must
+        never accidentally activate the relay branch."""
+        fake_mx_record = MagicMock(preference=10, exchange='mail.intics.ai.')
+
+        class FakeARecord:
+            def __str__(self):
+                return '203.0.113.9'
+
+        mock_smtp_instance = MagicMock()
+        mock_smtp_instance.has_extn.return_value = False
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_smtp_instance
+        with patch('document_requests.mail_delivery.dns.resolver.resolve',
+                   side_effect=[[fake_mx_record], [FakeARecord()]]), \
+             patch('document_requests.mail_delivery.smtplib.SMTP', return_value=mock_smtp_cm):
+            mail_delivery.send_direct_email('a@intics.ai', 'Subject', 'Body')
+        mock_smtp_instance.login.assert_not_called()
+
 
 class EmailDeliveryIntegrationTests(AuthenticatedAPITestCase):
     """email_service.py's real integration with mail_delivery.py -- the
@@ -1738,3 +1883,117 @@ class EmailDeliveryIntegrationTests(AuthenticatedAPITestCase):
         email = RequestEmail.objects.get(kind='request')
         self.assertFalse(email.delivery_attempted)
         self.assertFalse(email.delivered)
+
+
+class ExtractionReviewAndHandoffTests(AuthenticatedAPITestCase):
+    """Step 8 -- HITL review of real Step 7 data, request-level submit gate,
+    and a per-document discrepancy email. No document-twin versioning and
+    no business-twin covenant/DSCR display -- explicit scope decisions (see
+    TEST_CASES.md)."""
+
+    def setUp(self):
+        super().setUp()
+        self.doc_request = _make_sent_request(self.client, self.user)
+        items = list(self.doc_request.checklist_items.order_by('order').all())
+        self.client.force_authenticate(user=None)
+        for item in items:
+            # A real dollar amount -> a real ExtractedValue with confidence
+            # 0.95, comfortably above CONFIDENCE_ROUTING_THRESHOLD (0.85).
+            self.client.post(f'/api/upload/{self.doc_request.link_token}/documents', {
+                'checklistItemId': item.id, 'file': SimpleUploadedFile(f'{item.id}.txt', b'Total: $100'),
+            }, format='multipart')
+        self.client.force_authenticate(user=self.user)
+        items = list(self.doc_request.checklist_items.order_by('order').all())
+        for item in items:
+            self.client.post(f'/api/requests/{self.doc_request.id}/parking-bay/{item.id}/review', {
+                'decision': 'approve',
+            }, format='json')
+        self.client.post(f'/api/requests/{self.doc_request.id}/parking-bay/kick-start-extraction')
+
+        self.twins = list(DocumentTwin.objects.filter(document_request=self.doc_request).order_by('id'))
+        for twin in self.twins:
+            self.client.post(f'/api/requests/{self.doc_request.id}/extraction/{twin.id}/advance')  # -> classified
+            self.client.post(f'/api/requests/{self.doc_request.id}/extraction/{twin.id}/advance')  # -> extracted
+
+    def test_extraction_view_reports_real_verified_and_hitl_status_per_value(self):
+        res = self.client.get(f'/api/requests/{self.doc_request.id}/extraction')
+        twin_data = next(t for t in res.data['documentTwins'] if t['id'] == self.twins[0].id)
+        self.assertTrue(len(twin_data['extractedValues']) > 0)
+        for value in twin_data['extractedValues']:
+            self.assertFalse(value['needsReview'])  # $100 confidence 0.95 -- all clean
+
+    def test_can_submit_for_review_once_everything_is_verified(self):
+        res = self.client.get(f'/api/requests/{self.doc_request.id}/extraction')
+        self.assertTrue(res.data['canSubmitForReview'])
+        self.assertIsNone(res.data['submittedForReviewAt'])
+
+    def test_cannot_submit_while_a_hitl_pending_value_exists(self):
+        # inject a real low-confidence value directly, same technique used
+        # in Step 7's own confidence-aggregate test
+        ExtractedValue.objects.create(document_twin=self.twins[0], field_name='x', value='y', confidence=0.5)
+        res = self.client.get(f'/api/requests/{self.doc_request.id}/extraction')
+        self.assertFalse(res.data['canSubmitForReview'])
+
+        submit_res = self.client.post(f'/api/requests/{self.doc_request.id}/submit-for-review')
+        self.assertEqual(submit_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.doc_request.refresh_from_db()
+        self.assertIsNone(self.doc_request.submitted_for_review_at)
+
+    def test_submit_for_review_succeeds_and_records_a_real_timestamp(self):
+        res = self.client.post(f'/api/requests/{self.doc_request.id}/submit-for-review')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.doc_request.refresh_from_db()
+        self.assertIsNotNone(self.doc_request.submitted_for_review_at)
+
+    def test_submit_for_review_cannot_be_done_twice(self):
+        self.client.post(f'/api/requests/{self.doc_request.id}/submit-for-review')
+        res = self.client.post(f'/api/requests/{self.doc_request.id}/submit-for-review')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_submit_for_review_requires_auth(self):
+        self.client.force_authenticate(user=None)
+        res = self.client.post(f'/api/requests/{self.doc_request.id}/submit-for-review')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_discrepancy_email_requires_a_comment(self):
+        res = self.client.post(f'/api/requests/{self.doc_request.id}/extraction/{self.twins[0].id}/discrepancy', {
+            'comment': '',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(RequestEmail.objects.filter(kind='discrepancy').exists())
+
+    def test_discrepancy_email_includes_the_comment_verbatim_and_the_document_name(self):
+        comment = "Cash-flow totals on page 4 don't reconcile with the income statement."
+        res = self.client.post(f'/api/requests/{self.doc_request.id}/extraction/{self.twins[0].id}/discrepancy', {
+            'comment': comment,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        email = RequestEmail.objects.get(kind='discrepancy')
+        self.assertIn(comment, email.body_text)
+        self.assertIn(self.twins[0].uploaded_file.file_name, email.body_text)
+        self.assertEqual(email.to_email, self.doc_request.email)
+
+    def test_discrepancy_email_does_not_change_request_or_submit_state(self):
+        """Sending a discrepancy doesn't mark anything resolved -- no
+        versioning/re-extraction cycle exists in this pass (explicit scope
+        decision), the request just stays open."""
+        self.client.post(f'/api/requests/{self.doc_request.id}/extraction/{self.twins[0].id}/discrepancy', {
+            'comment': 'needs a correction',
+        }, format='json')
+        self.doc_request.refresh_from_db()
+        self.assertIsNone(self.doc_request.submitted_for_review_at)
+        self.assertEqual(self.doc_request.status, 'uploads_complete')
+
+    def test_discrepancy_requires_auth(self):
+        self.client.force_authenticate(user=None)
+        res = self.client.post(f'/api/requests/{self.doc_request.id}/extraction/{self.twins[0].id}/discrepancy', {
+            'comment': 'x',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_discrepancy_on_nonexistent_twin_404s(self):
+        res = self.client.post(f'/api/requests/{self.doc_request.id}/extraction/999999/discrepancy', {
+            'comment': 'x',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)

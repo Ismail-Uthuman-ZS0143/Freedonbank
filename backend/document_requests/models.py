@@ -39,6 +39,12 @@ class DocumentRequest(models.Model):
     # extraction pipeline) isn't built yet, so this just marks the moment
     # the reviewer queued the approved documents; nothing consumes it yet.
     extraction_queued_at = models.DateTimeField(null=True, blank=True)
+    # Step 8's "Submit for loan officer review" -- set once, real gate is
+    # every ExtractedValue across every DocumentTwin in the request being
+    # at/above CONFIDENCE_ROUTING_THRESHOLD (see views.py). No real
+    # loan-officer queue/handoff destination exists past this point yet --
+    # this just marks the moment the reviewer packaged the request.
+    submitted_for_review_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'document_requests'
@@ -61,6 +67,7 @@ class RequestEmail(models.Model):
         ('fraud_alert', 'Fraud/session-guard alert'),
         ('confirmation', 'Upload completion confirmation'),
         ('review_flags', 'Batched flagged-document re-request'),
+        ('discrepancy', 'Step 8 HITL discrepancy — customer query'),
     ]
 
     document_request = models.ForeignKey(DocumentRequest, on_delete=models.CASCADE, related_name='emails')
